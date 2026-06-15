@@ -1,0 +1,22 @@
+services:
+  mexc-research-collector-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID}
+      DATA_ROOT: /app/storage
+      TELEGRAM_SEND_LIMIT_MB: ${TELEGRAM_SEND_LIMIT_MB:-48}
+      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
+      DAYS_BACK: ${DAYS_BACK:-365}
+      BASE_INTERVAL: ${BASE_INTERVAL:-1m}
+      MEXC_BASE_URL: ${MEXC_BASE_URL:-https://api.mexc.com}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - mexc_research_storage:/app/storage
+
+volumes:
+  mexc_research_storage:
