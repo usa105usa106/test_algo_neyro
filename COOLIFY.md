@@ -1,86 +1,88 @@
-# Coolify deploy
+# Запуск в Coolify — no-folders version
 
-This repo is ready for Coolify + GitHub deployment.
+Эта версия сделана для случая, когда в GitHub неудобно создавать папки. Все файлы лежат в корне репозитория.
 
-## Recommended Coolify mode
+## 1. Загрузка в GitHub
 
-Use **Docker Compose** deployment from this repository. The included `docker-compose.yml` builds the Dockerfile and creates a persistent volume at:
+Загрузи все файлы из архива в корень репозитория. Не нужно создавать `src` или `systemd`.
+
+Обязательные файлы:
 
 ```text
-/app/storage
+archive_builder.py
+bot.py
+charts.py
+config.py
+file_utils.py
+logging_setup.py
+mexc.py
+security.py
+run.py
+Dockerfile
+docker-compose.yml
+docker-entrypoint.sh
+requirements.txt
 ```
 
-That folder stores:
+Остальные файлы желательно тоже загрузить:
 
 ```text
-candles/
-charts/
-exports/
-logs/
-secrets/
-state/
-work/
+README.md
+COOLIFY.md
+.env.coolify.example
+.dockerignore
+.gitignore
+mexc-research-collector.service
 ```
 
-Without persistent storage, Parquet files, archives, encrypted API state, and logs can disappear after redeploy.
+## 2. Coolify resource
 
-## Required environment variables in Coolify
+В Coolify:
 
-Set these in Coolify environment variables:
+1. New Resource → GitHub repository.
+2. Выбери репозиторий.
+3. Build Pack: Docker Compose, если Coolify видит `docker-compose.yml`.
+4. Если Docker Compose не выбирается, используй Dockerfile.
+
+## 3. Environment Variables
+
+Минимум:
 
 ```text
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-ADMIN_TELEGRAM_ID=your_numeric_telegram_user_id
+TELEGRAM_BOT_TOKEN=...
+ADMIN_TELEGRAM_ID=...
 ```
 
-Optional variables:
+Рекомендуемые значения:
 
 ```text
+DATA_ROOT=/app/storage
+TELEGRAM_SEND_LIMIT_MB=48
 SYMBOLS=BTCUSDT,ETHUSDT
 DAYS_BACK=365
 BASE_INTERVAL=1m
 MEXC_BASE_URL=https://api.mexc.com
-TELEGRAM_SEND_LIMIT_MB=48
 TZ=UTC
-SECRET_ENCRYPTION_KEY=
 ```
 
-`SECRET_ENCRYPTION_KEY` can stay empty. The bot will generate a Fernet key and store it in `/app/storage/state/fernet.key`. If you want a fixed key, generate it locally:
+## 4. Persistent storage
 
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-## Coolify setup steps
-
-1. Push this folder to a GitHub repo.
-2. In Coolify, create a new resource from GitHub.
-3. Select this repo.
-4. Choose Docker Compose if Coolify asks for build mode.
-5. Add the required environment variables.
-6. Deploy.
-7. Open Telegram and send `/start` to the bot.
-
-## No public port needed
-
-The bot uses Telegram long polling. It does not need an HTTP port or domain.
-
-## Buttons
+В `docker-compose.yml` уже есть volume:
 
 ```text
-Api       — save read-only MEXC API key/secret in encrypted storage
-Parquet   — create research_input_BTC_ETH_data_*.zip
-Charts    — create research_input_BTC_ETH_charts_*.zip
-Log_full  — create log_full_*.zip with logs and export index
-Reset     — cancel current task, clear runtime/API state, clean temp work folder
-Status    — show current state and latest exports
+mexc_research_storage:/app/storage
 ```
 
-## Important safety note
+Это нужно, чтобы после redeploy не терялись свечи, архивы, логи и encrypted API state.
 
-This collector has no trading code. There are no place order, cancel order, withdraw, transfer, or leverage-changing endpoints.
+## 5. Проверка
 
+После Deploy:
 
-## Progress messages
+1. Открой Telegram.
+2. Напиши боту `/start`.
+3. Нажми `Parquet`.
+4. Дождись архива `research_input_BTC_ETH_data_*.zip`.
+5. После этого нажми `Charts`.
 
-During long jobs the bot sends Telegram progress updates at 0/10/20/.../100% for both `Parquet` and `Charts`. Use `Log_full` if a job fails or stops updating.
+Если что-то упало — нажми `Log_full`.
