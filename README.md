@@ -1,67 +1,58 @@
-# MEXC BTC/ETH Research Collector Bot — v10
+# BTC/ETH Research Collector Bot — v12
 
-Telegram-бот для подготовки архивов данных под staged research в ChatGPT.
+No-folders версия для GitHub + Coolify. Все файлы лежат в корне репозитория.
+
+## Источник данных
+
+- Parquet скачивает **Binance Spot public klines** через `https://api.binance.com/api/v3/klines`.
+- **Binance Futures не используется**.
+- **MEXC Futures не используется**.
+- В коде нет функций открытия/отмены ордеров.
 
 ## Кнопки
 
-- **Api** — сохранить MEXC API key/secret в encrypted storage. Для market data ключ не обязателен.
-- **Parquet** — скачать BTC/ETH 1m за 365 дней с MEXC futures и создать `research_input_BTC_ETH_data_*.zip`.
-- **Charts** — построить читаемые графики из локальных Parquet и создать `research_input_BTC_ETH_charts_*.zip`.
-- **Log_full** — собрать полный лог, индекс архивов и state.
-- **Status** — состояние задач, market type, последние архивы.
-- **Ping** — время отклика, uptime, RAM/CPU/disk, версия `v10`.
-- **Reset** — остановить текущую фоновую задачу, очистить runtime/API state и временную рабочую папку.
+- **Api** — опционально сохранить MEXC API key/secret в encrypted storage. Для скачивания свечей ключ не нужен.
+- **Parquet** — создать `research_input_BTC_ETH_data_*.zip` со свечами BTC/ETH 1m за 365 дней.
+- **Charts** — создать `research_input_BTC_ETH_charts_*.zip` с графиками из локальных Parquet.
+- **Log_full** — забрать полный лог и индекс файлов.
+- **Status** — состояние задач и последние архивы.
+- **Ping** — версия, отклик, uptime, RAM/CPU/disk.
+- **Reset** — остановить фоновые задачи и очистить runtime/temp/API state.
 
-## Важно
+## Coolify env
 
-В коде нет торговых endpoints: нет `place_order`, `cancel_order`, withdraw/transfer. Бот не умеет открывать реальные сделки.
-
-## Coolify
-
-В Coolify нужны только переменные:
+Нужны только:
 
 ```env
-TELEGRAM_BOT_TOKEN=123456:ABC...
-ADMIN_TELEGRAM_ID=123456789
+TELEGRAM_BOT_TOKEN=...
+ADMIN_TELEGRAM_ID=...
 ```
 
-Остальное уже прописано в коде:
+`MEXC_MARKET_TYPE`, `MIN_COVERAGE_RATIO`, `MEXC_BASE_URL` добавлять не надо. Источник данных уже зашит в коде: Binance Spot.
 
-- market type: `futures`
-- MEXC base URL: `https://api.mexc.com`
-- min coverage: `0.80`
-- version: `v10`
+## Что должно получиться
 
-## Файлы в GitHub
-
-Версия no-folders: все файлы кладутся прямо в корень репозитория.
-
-Главные файлы:
+Parquet archive:
 
 ```text
-archive_builder.py
-bot.py
-charts.py
-config.py
-file_utils.py
-logging_setup.py
-mexc.py
-security.py
-run.py
-Dockerfile
-docker-compose.yml
-docker-entrypoint.sh
-requirements.txt
-README.md
-COOLIFY.md
+research_input_BTC_ETH_data_*.zip
+├── manifest.json
+├── candles/
+│   ├── BTCUSDT_1m.parquet
+│   └── ETHUSDT_1m.parquet
+└── meta/
+    ├── exchange_info.json
+    ├── fees.json
+    └── api_status.json
 ```
 
-## Порядок работы
+Нормальный размер — ориентировочно 60–250 MB. Нормальное количество строк — около 525,600 свечей на символ.
 
-1. Redeploy в Coolify.
-2. В Telegram: `/start`.
-3. Нажать **Ping**, проверить что версия `v10`.
-4. Нажать **Reset** после обновления версии.
-5. Нажать **Parquet**.
-6. После успешного архива нажать **Charts**.
-7. Если ошибка — нажать **Log_full** и скачать лог.
+## Порядок
+
+1. Deploy в Coolify.
+2. `/start`.
+3. `Ping` — проверить `version: v12`.
+4. `Reset`.
+5. `Parquet`.
+6. После 100% — `Charts`.

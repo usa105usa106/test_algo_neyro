@@ -101,12 +101,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await guarded(update, runtime):
         return
     api_mask = runtime.secret_store.load_mexc_api_mask()
-    api_text = f"API сохранён: {api_mask['api_key']}" if api_mask else "API не задан; market data всё равно качается через public MEXC endpoints."
+    api_text = f"API сохранён: {api_mask['api_key']}" if api_mask else "API не задан; свечи всё равно качаются через public Binance Spot endpoints."
     await update.effective_message.reply_text(
-        "MEXC BTC/ETH Research Collector\n\n"
+        "BTC/ETH Research Collector — Binance Spot\n\n"
         "Кнопки:\n"
-        "Api — сохранить read-only MEXC API key/secret в зашифрованном виде.\n"
-        "Parquet — создать архив со свечами BTC/ETH 1m за 365 дней + meta. По умолчанию MEXC futures.\n"
+        "Api — опционально сохранить MEXC API key/secret в encrypted storage. Для Binance Spot свечей ключ не нужен.\n"
+        "Parquet — создать архив со свечами BTC/ETH 1m за 365 дней + meta. Источник: Binance Spot public klines.\n"
         "Charts — создать архив с читаемыми графиками из Parquet.\n"
         "Log_full — отправить полный лог и индекс архивов.\n"
         "Status — показать состояние задач и последние архивы.\n"
@@ -216,9 +216,9 @@ async def start_api_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     runtime.awaiting_api_step[user_id] = {"step": "api_key"}
     await update.callback_query.message.reply_text(
-        "Отправь MEXC API KEY одним сообщением.\n\n"
+        "Отправь MEXC API KEY одним сообщением, если хочешь сохранить его для meta/status. Для свечей Binance Spot ключ не нужен.\n\n"
         "Рекомендация: создай ключ только для чтения, без trade/withdraw permissions.\n"
-        "Для свечей ключ не обязателен, но я сохраню его в encrypted storage для meta/status.\n"
+        "Для свечей Binance Spot ключ не обязателен; я сохраню его только в encrypted storage для meta/status.\n"
         "Напиши /cancel, чтобы отменить."
     )
 
@@ -259,7 +259,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         api_secret = text
         mask = runtime.secret_store.save_mexc_api(api_key, api_secret)
         runtime.awaiting_api_step.pop(user.id, None)
-        runtime.logger.info("MEXC API saved via Telegram, key mask=%s", mask.get("api_key"))
+        runtime.logger.info("API saved via Telegram, key mask=%s", mask.get("api_key"))
         await update.effective_message.reply_text(
             f"API сохранён зашифрованно. Key: {mask['api_key']}\n"
             "Бот всё равно не умеет открывать сделки: торговых endpoints в коде нет.",

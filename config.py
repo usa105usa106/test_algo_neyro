@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-APP_VERSION = "v10"
+APP_VERSION = "v12"
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -81,10 +81,11 @@ def load_settings() -> Settings:
     data_root = Path(os.getenv("DATA_ROOT", "./storage")).expanduser().resolve()
     # Hardcoded defaults for this collector.
     # Do not require Coolify env variables for these two settings.
-    # This bot is a DATA COLLECTOR only; it uses MEXC futures market-data endpoints
-    # because spot 1m klines may return only a short recent slice in this setup.
-    market_type = "futures"
-    mexc_base_url = "https://api.mexc.com"
+    # Hardcoded: Binance SPOT public klines only.
+    # No Binance Futures endpoints are used, because futures can be blocked by region/authorization.
+    # MEXC API key may still be stored by Api button for future meta/status, but candles are downloaded from Binance Spot.
+    market_type = "binance_spot"
+    mexc_base_url = "https://api.binance.com"
     min_coverage_ratio = 0.80
 
     settings = Settings(

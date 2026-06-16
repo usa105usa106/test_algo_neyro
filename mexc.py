@@ -76,9 +76,10 @@ class DownloadWindow:
 
 
 class MexcSpotClient:
-    """Market-data-only client. Supports MEXC spot and futures klines.
+    """Market-data-only client. Current default is Binance Spot public klines only.
 
-    No trading endpoints exist here.
+    No trading endpoints exist here. Futures code is retained only as unused legacy fallback,
+    but config.py hardcodes binance_spot.
     """
 
     def __init__(self, base_url: str, logger: logging.Logger, market_type: str = "futures"):
@@ -87,10 +88,10 @@ class MexcSpotClient:
         self.market_type = market_type.lower().strip()
         timeout = aiohttp.ClientTimeout(total=60)
         self.session = aiohttp.ClientSession(timeout=timeout)
-        # MEXC futures can return code=510 even with HTTP 200 when requests are too frequent.
+        # Some exchanges can return app-level rate limits even with HTTP 200.
         # Keep requests intentionally slow and serialized. This is a data collector, speed is less
         # important than completing a clean 365-day archive.
-        self.min_request_interval_sec = 1.25 if self.market_type == "futures" else 0.35
+        self.min_request_interval_sec = 1.25 if self.market_type == "futures" else (0.25 if self.market_type == "binance_spot" else 0.35)
         self._last_request_ts = 0.0
         self._request_lock = asyncio.Lock()
 
@@ -118,7 +119,7 @@ class MexcSpotClient:
                     if resp.status in {418, 429} or resp.status >= 500:
                         wait = min(10 + attempt * 10, 90)
                         self.logger.warning(
-                            "MEXC retry %s/%s status=%s wait=%ss url=%s params=%s body=%s",
+                            "Market data retry %s/%s status=%s wait=%ss url=%s params=%s body=%s",
                             attempt, retries, resp.status, wait, url, params, text[:300],
                         )
                         await asyncio.sleep(wait)
@@ -136,7 +137,7 @@ class MexcSpotClient:
                         if code in {"510", "429", "418"} or "too frequent" in message.lower():
                             wait = min(15 + attempt * 15, 120)
                             self.logger.warning(
-                                "MEXC app-level rate limit %s/%s code=%s wait=%ss url=%s params=%s message=%s",
+                                "Market data app-level rate limit %s/%s code=%s wait=%ss url=%s params=%s message=%s",
                                 attempt, retries, code, wait, url, params, message,
                             )
                             await asyncio.sleep(wait)
@@ -146,13 +147,13 @@ class MexcSpotClient:
                 last_error = exc
                 wait = min(5 + attempt * 5, 60)
                 self.logger.warning(
-                    "MEXC request error %s/%s: %s; wait=%ss url=%s params=%s",
+                    "Market data request error %s/%s: %s; wait=%ss url=%s params=%s",
                     attempt, retries, exc, wait, url, params,
                 )
                 await asyncio.sleep(wait)
         if last_error is not None:
-            raise RuntimeError(f"MEXC request failed after {retries} retries: {last_error}")
-        raise RuntimeError(f"MEXC request failed after {retries} retries. Last response: {last_text}")
+            raise RuntimeError(f"Market data request failed after {retries} retries: {last_error}")
+        raise RuntimeError(f"Market data request failed after {retries} retries. Last response: {last_text}")
 
     async def ping(self) -> bool:
         if self.market_type == "futures":
@@ -170,6 +171,20 @@ class MexcSpotClient:
         return {"serverTime": int(data.get("serverTime")), "source_endpoint": "/api/v3/time", "raw": data}
 
     async def exchange_info(self, symbols: list[str]) -> dict:
+        if self.market_type == "binance_spot":
+            # Binance supports JSON-encoded symbols parameter, but per-symbol fallback is
+            # more tolerant if the gateway rejects the batch encoding.
+            try:
+                return await self._get_json("/api/v3/exchangeInfo", {"symbols": json.dumps(symbols)})
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("Binance batch exchangeInfo failed, fallback per-symbol: %s", exc)
+                items = []
+                for sym in symbols:
+                    data = await self._get_json("/api/v3/exchangeInfo", {"symbol": sym})
+                    if isinstance(data, dict):
+                        items.extend(data.get("symbols") or [])
+                return {"market_type": "binance_spot", "symbols": items}
+
         if self.market_type == "futures":
             items: list[dict[str, Any]] = []
             for symbol in symbols:
@@ -281,7 +296,7 @@ class MexcSpotClient:
         request_count = 0
         last_open_seen: int | None = None
         expected_total = max(1, (end - start) // interval_ms)
-        chunk_limit = 2000 if self.market_type == "futures" else 500
+        chunk_limit = 2000 if self.market_type == "futures" else (1000 if self.market_type == "binance_spot" else 500)
 
         self.logger.info(
             "Downloading %s %s %s from %s to %s",
@@ -339,7 +354,7 @@ class MexcSpotClient:
                 start = chunk_end + interval_ms
             else:
                 start = last_open_seen + interval_ms
-            await asyncio.sleep(0.05 if self.market_type == "spot" else 0.25)
+            await asyncio.sleep(0.25 if self.market_type in {"futures", "binance_spot"} else 0.05)
 
         df = self._klines_to_df(symbol, interval, rows)
         self.logger.info("Downloaded %s %s %s rows=%s expected=%s", self.market_type, symbol, interval, len(df), expected_total)
@@ -367,7 +382,7 @@ class MexcSpotClient:
                 "quote_volume": float(row[7]) if len(row) > 7 and row[7] is not None else None,
                 "symbol": symbol,
                 "interval": interval,
-                "source_exchange": "MEXC_MARKET_DATA",
+                "source_exchange": "BINANCE_SPOT_PUBLIC",
             })
         df = pd.DataFrame(clean)
         df = df.drop_duplicates(subset=["open_time"]).sort_values("open_time").reset_index(drop=True)
@@ -380,7 +395,7 @@ def save_dataframe_parquet(df: pd.DataFrame, path: Path) -> None:
 
 
 def extract_fees_from_exchange_info(exchange_info: dict) -> dict:
-    fees = {"source": "MEXC public market fields", "market_type": exchange_info.get("market_type"), "symbols": {}}
+    fees = {"source": "Binance Spot public exchangeInfo fields / fee placeholder", "market_type": exchange_info.get("market_type"), "symbols": {}}
     for item in exchange_info.get("symbols", []):
         symbol = item.get("requestedSymbol") or item.get("symbol")
         if not symbol:
@@ -391,6 +406,6 @@ def extract_fees_from_exchange_info(exchange_info: dict) -> dict:
             "takerCommission": item.get("takerCommission"),
             "makerFeeRate": item.get("makerFeeRate"),
             "takerFeeRate": item.get("takerFeeRate"),
-            "note": "Public symbol fee fields. Verify account-specific fees before live trading.",
+            "note": "Public symbol fields; Binance Spot public exchangeInfo does not provide your account-specific maker/taker fees. Verify fees before live trading.",
         }
     return fees

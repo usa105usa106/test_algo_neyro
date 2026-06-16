@@ -63,7 +63,7 @@ async def build_data_archive(
 
     client = MexcSpotClient(settings.mexc_base_url, logger, settings.mexc_market_type)
     try:
-        await reporter.report(5, "проверяю MEXC public API")
+        await reporter.report(5, "проверяю Binance Spot public API")
         ping_ok = await client.ping()
         server_time = await client.server_time()
         interval_ms = 60_000
@@ -73,7 +73,7 @@ async def build_data_archive(
         window = DownloadWindow.last_days_from_end_ms(settings.days_back, int(server_time["serverTime"]), interval_ms)
         exchange_info = await client.exchange_info(settings.symbols)
         fees = extract_fees_from_exchange_info(exchange_info)
-        await reporter.report(10, "MEXC доступен, meta получена")
+        await reporter.report(10, "Binance Spot доступен, meta получена")
 
         row_counts: dict[str, int] = {}
         candle_files: dict[str, str] = {}
@@ -106,7 +106,7 @@ async def build_data_archive(
                 raise RuntimeError(
                     f"{symbol}: скачано слишком мало свечей: {len(df):,}/{expected_rows:,} "
                     f"({coverage:.1%}). Это не годовой архив. "
-                    f"Текущий рынок={settings.mexc_market_type}. Для 1m за год нужен futures endpoint или официальный historical data источник."
+                    f"Текущий источник={settings.mexc_market_type}. Для 1m за год нужен официальный historical data источник; Binance Spot должен отдавать годовую историю."
                 )
 
             await reporter.report(symbol_base + symbol_span * 0.92, f"{symbol}: сохраняю Parquet")
@@ -127,16 +127,16 @@ async def build_data_archive(
         write_json(meta_out / "exchange_info.json", exchange_info)
         write_json(meta_out / "fees.json", fees)
         write_json(meta_out / "api_status.json", {
-            "mexc_public_ping_ok": ping_ok,
-            "mexc_server_time": server_time,
+            "binance_spot_public_ping_ok": ping_ok,
+            "binance_server_time": server_time,
             "api_key_saved_mask": api_mask,
-            "note": f"Market data uses public MEXC {settings.mexc_market_type} endpoints. API key is stored only if user added it via Api button. No trading/order endpoint exists in this bot.",
+            "note": f"Market data uses Binance Spot public endpoints from {settings.mexc_base_url}. No futures endpoints and no trading/order endpoints exist in this bot. API key is optional and not used for candle download.",
         })
 
         manifest = {
             "archive_type": "research_input_BTC_ETH_data",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
-            "exchange": "MEXC",
+            "exchange": "BINANCE_SPOT_PUBLIC_HISTORY_FOR_RESEARCH",
             "market_type": settings.mexc_market_type,
             "base_url": settings.mexc_base_url,
             "symbols": settings.symbols,
@@ -148,9 +148,9 @@ async def build_data_archive(
             "row_counts": row_counts,
             "required_for_chatgpt_research": True,
             "contents": {
-                "candles": "1m OHLCV parquet files for BTC/ETH",
-                "meta/exchange_info.json": "MEXC public trading rules / symbol fields",
-                "meta/fees.json": "maker/taker fields parsed from exchange_info, verify before live trading",
+                "candles": "1m OHLCV parquet files for BTC/ETH from Binance Spot public historical klines.",
+                "meta/exchange_info.json": "Binance Spot public exchangeInfo symbol fields",
+                "meta/fees.json": "fee placeholder/public fields; verify actual account/exchange fees before live trading",
                 "meta/api_status.json": "public/API status and masked key info",
             },
             "progress_note": "Bot sends 0/10/20/.../100% Telegram updates during archive creation.",
