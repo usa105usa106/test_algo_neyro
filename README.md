@@ -52,7 +52,13 @@ research_input_BTC_ETH_data_*.zip
 
 1. Deploy в Coolify.
 2. `/start`.
-3. `Ping` — проверить `version: v12`.
+3. `Ping` — проверить `version: v13`.
 4. `Reset`.
 5. `Parquet`.
 6. После 100% — `Charts`.
+
+
+## v13 fix
+
+- Исправлены pandas frequency aliases для Charts: используются `1d`, `4h`, `1h`, `15min`, чтобы не падать на ошибке `Invalid frequency: 4H`.
+- Если Parquet уже создан успешно, заново Parquet нажимать не нужно — можно сразу нажать Charts после redeploy.

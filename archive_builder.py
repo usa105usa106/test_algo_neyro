@@ -198,12 +198,12 @@ async def _make_charts_for_symbol_with_progress(
             await chart_done_cb(rel)
 
     # 1D full year: readable, 365 candles.
-    df_1d = resample_ohlcv(df_1m, "1D")
+    df_1d = resample_ohlcv(df_1m, "1d")
     p = out_root / "overview" / f"{symbol}_1D_full_year.png"
     await plot(df_1d, f"{symbol} 1D full year", p, figsize=(16, 8), mav=(20, 50, 200))
 
     # 4H monthly: one readable chart per month, last 12 months in data.
-    df_4h = resample_ohlcv(df_1m, "4H")
+    df_4h = resample_ohlcv(df_1m, "4h")
     months = sorted(df_4h.index.to_period("M").unique())[-12:]
     for month in months:
         month_df = df_4h[df_4h.index.to_period("M") == month]
@@ -213,7 +213,7 @@ async def _make_charts_for_symbol_with_progress(
         await plot(month_df, f"{symbol} 4H {month}", p, figsize=(16, 8), mav=(20, 50))
 
     # 1H last 90 days, grouped by month.
-    df_1h = resample_ohlcv(df_1m, "1H")
+    df_1h = resample_ohlcv(df_1m, "1h")
     recent_1h = df_1h[df_1h.index >= latest_ts - pd.Timedelta(days=90)]
     recent_months = sorted(recent_1h.index.to_period("M").unique())
     for month in recent_months:

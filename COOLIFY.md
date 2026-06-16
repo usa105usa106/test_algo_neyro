@@ -34,7 +34,7 @@ ADMIN_TELEGRAM_ID=...
 После deploy:
 
 1. Напиши боту `/start`.
-2. Нажми `Ping`. Должно быть `version: v12`.
+2. Нажми `Ping`. Должно быть `version: v13`.
 3. Нажми `Reset`.
 4. Нажми `Parquet`.
 
@@ -56,3 +56,9 @@ mexc_research_storage:/app/storage
 ```
 
 В storage лежат свечи, графики, архивы, логи и encrypted state.
+
+
+## v13 fix
+
+- Исправлены pandas frequency aliases для Charts: используются `1d`, `4h`, `1h`, `15min`, чтобы не падать на ошибке `Invalid frequency: 4H`.
+- Если Parquet уже создан успешно, заново Parquet нажимать не нужно — можно сразу нажать Charts после redeploy.
