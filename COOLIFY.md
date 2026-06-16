@@ -1,38 +1,60 @@
-# Coolify deploy — no-folders v8
+# Coolify deploy — MEXC Research Collector v10
 
-Upload all files directly into the repository root. Do not create `src` or `systemd` folders.
+## 1. GitHub
 
-## Coolify setup
+Загрузи все файлы из архива прямо в корень репозитория. Папки создавать не нужно.
 
-1. Create a GitHub repository.
-2. Upload all files from this archive into the root of the repository.
-3. In Coolify, create a new application from the GitHub repository.
-4. Use Docker Compose or Dockerfile deploy.
-5. Add only these required environment variables:
+## 2. Coolify
+
+Создай новый ресурс из GitHub repo.
+
+Рекомендуемый режим: **Docker Compose**.
+
+## 3. Environment Variables
+
+Добавь только:
 
 ```env
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-ADMIN_TELEGRAM_ID=your_numeric_telegram_id
+TELEGRAM_BOT_TOKEN=токен_бота
+ADMIN_TELEGRAM_ID=твой_telegram_id
 ```
 
-You do **not** need to add `MEXC_MARKET_TYPE` or `MIN_COVERAGE_RATIO`; they are hardcoded in `config.py`:
+Не нужно добавлять `MEXC_MARKET_TYPE` и `MIN_COVERAGE_RATIO`: они уже прописаны в коде.
 
-```text
-MEXC market type: futures
-MEXC futures base URL: https://api.mexc.com
-Minimum coverage: 0.80
-```
+## 4. Persistent storage
 
-6. Deploy.
-7. Open Telegram and send `/start` to the bot.
-8. Press `Reset`, then `Parquet`, then `Charts`.
-
-## Persistent storage
-
-The Docker Compose file mounts:
+В `docker-compose.yml` уже есть volume:
 
 ```text
 mexc_research_storage:/app/storage
 ```
 
-Keep this volume so Parquet files, logs, encrypted API state and generated archives survive redeploys.
+Там хранятся candles, exports, logs, state, secrets.
+
+## 5. После deploy
+
+В Telegram:
+
+1. `/start`
+2. **Ping** — проверить `version: v10`.
+3. **Reset** — после обновления версии.
+4. **Parquet**.
+5. **Charts**.
+
+## 6. Ping
+
+Кнопка **Ping** показывает:
+
+- version
+- response ms
+- uptime
+- started UTC
+- current task
+- process RAM
+- system RAM
+- process CPU
+- disk usage
+
+## 7. Если MEXC ограничивает запросы
+
+В v9/v10 добавлены throttle и retry для futures `code=510` / `Requests are too frequent`. Поэтому сбор Parquet может идти дольше, но не должен падать сразу от rate limit.

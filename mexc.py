@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -86,33 +87,72 @@ class MexcSpotClient:
         self.market_type = market_type.lower().strip()
         timeout = aiohttp.ClientTimeout(total=60)
         self.session = aiohttp.ClientSession(timeout=timeout)
+        # MEXC futures can return code=510 even with HTTP 200 when requests are too frequent.
+        # Keep requests intentionally slow and serialized. This is a data collector, speed is less
+        # important than completing a clean 365-day archive.
+        self.min_request_interval_sec = 1.25 if self.market_type == "futures" else 0.35
+        self._last_request_ts = 0.0
+        self._request_lock = asyncio.Lock()
+
+    async def _throttle(self) -> None:
+        async with self._request_lock:
+            now = time.monotonic()
+            wait = self.min_request_interval_sec - (now - self._last_request_ts)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_request_ts = time.monotonic()
 
     async def close(self) -> None:
         await self.session.close()
 
-    async def _get_json(self, path: str, params: dict[str, Any] | None = None, retries: int = 6) -> Any:
+    async def _get_json(self, path: str, params: dict[str, Any] | None = None, retries: int = 12) -> Any:
         url = f"{self.base_url}{path}"
         last_error: Exception | None = None
+        last_text = ""
         for attempt in range(1, retries + 1):
             try:
+                await self._throttle()
                 async with self.session.get(url, params=params) as resp:
                     text = await resp.text()
+                    last_text = text[:500]
                     if resp.status in {418, 429} or resp.status >= 500:
-                        wait = min(2 ** attempt, 30)
-                        self.logger.warning("MEXC retry %s/%s status=%s wait=%ss url=%s params=%s", attempt, retries, resp.status, wait, url, params)
+                        wait = min(10 + attempt * 10, 90)
+                        self.logger.warning(
+                            "MEXC retry %s/%s status=%s wait=%ss url=%s params=%s body=%s",
+                            attempt, retries, resp.status, wait, url, params, text[:300],
+                        )
                         await asyncio.sleep(wait)
                         continue
                     if resp.status >= 400:
                         raise RuntimeError(f"HTTP {resp.status}: {text[:500]}")
                     if not text:
                         return None
-                    return json.loads(text)
+                    data = json.loads(text)
+                    # Futures API may return HTTP 200 with {'success': False, 'code': 510,
+                    # 'message': 'Requests are too frequent...'}; treat it as retryable.
+                    if isinstance(data, dict) and data.get("success") is False:
+                        code = str(data.get("code", ""))
+                        message = str(data.get("message", ""))
+                        if code in {"510", "429", "418"} or "too frequent" in message.lower():
+                            wait = min(15 + attempt * 15, 120)
+                            self.logger.warning(
+                                "MEXC app-level rate limit %s/%s code=%s wait=%ss url=%s params=%s message=%s",
+                                attempt, retries, code, wait, url, params, message,
+                            )
+                            await asyncio.sleep(wait)
+                            continue
+                    return data
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
-                wait = min(2 ** attempt, 30)
-                self.logger.warning("MEXC request error %s/%s: %s; wait=%ss url=%s params=%s", attempt, retries, exc, wait, url, params)
+                wait = min(5 + attempt * 5, 60)
+                self.logger.warning(
+                    "MEXC request error %s/%s: %s; wait=%ss url=%s params=%s",
+                    attempt, retries, exc, wait, url, params,
+                )
                 await asyncio.sleep(wait)
-        raise RuntimeError(f"MEXC request failed after {retries} retries: {last_error}")
+        if last_error is not None:
+            raise RuntimeError(f"MEXC request failed after {retries} retries: {last_error}")
+        raise RuntimeError(f"MEXC request failed after {retries} retries. Last response: {last_text}")
 
     async def ping(self) -> bool:
         if self.market_type == "futures":
@@ -229,7 +269,7 @@ class MexcSpotClient:
         symbol: str,
         interval: str,
         window: DownloadWindow,
-        progress_every_requests: int = 25,
+        progress_every_requests: int = 10,
         progress_cb: Callable[[float, int, int], Awaitable[None]] | None = None,
     ) -> pd.DataFrame:
         if interval not in INTERVAL_MS:
@@ -267,7 +307,7 @@ class MexcSpotClient:
                 consecutive_empty += 1
                 self.logger.warning("Empty chunk %s %s %s start=%s end=%s; advancing", self.market_type, symbol, interval, start, chunk_end)
                 start = chunk_end + interval_ms
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.25 if self.market_type == "futures" else 0.05)
                 if progress_cb and request_count % progress_every_requests == 0:
                     pct = min(100.0, max(0.0, (start - window.start_ms) / max(1, window.end_ms - window.start_ms) * 100.0))
                     await progress_cb(pct, len(rows), expected_total)
@@ -299,7 +339,7 @@ class MexcSpotClient:
                 start = chunk_end + interval_ms
             else:
                 start = last_open_seen + interval_ms
-            await asyncio.sleep(0.04 if self.market_type == "spot" else 0.08)
+            await asyncio.sleep(0.05 if self.market_type == "spot" else 0.25)
 
         df = self._klines_to_df(symbol, interval, rows)
         self.logger.info("Downloaded %s %s %s rows=%s expected=%s", self.market_type, symbol, interval, len(df), expected_total)

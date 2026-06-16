@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import psutil
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
@@ -28,6 +33,7 @@ BTN_CHARTS = "charts"
 BTN_LOG_FULL = "log_full"
 BTN_RESET = "reset"
 BTN_STATUS = "status"
+BTN_PING = "ping"
 
 
 class BotRuntime:
@@ -39,6 +45,8 @@ class BotRuntime:
         self.active_task_name: str | None = None
         self.awaiting_api_step: dict[int, dict[str, Any]] = {}
         self.last_export: Path | None = None
+        self.started_at_monotonic = time.monotonic()
+        self.started_at_utc = datetime.now(timezone.utc)
 
     def is_admin(self, update: Update) -> bool:
         if self.settings.admin_telegram_id is None:
@@ -65,7 +73,8 @@ def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Api", callback_data=BTN_API), InlineKeyboardButton("Parquet", callback_data=BTN_PARQUET)],
         [InlineKeyboardButton("Charts", callback_data=BTN_CHARTS), InlineKeyboardButton("Log_full", callback_data=BTN_LOG_FULL)],
-        [InlineKeyboardButton("Status", callback_data=BTN_STATUS), InlineKeyboardButton("Reset", callback_data=BTN_RESET)],
+        [InlineKeyboardButton("Status", callback_data=BTN_STATUS), InlineKeyboardButton("Ping", callback_data=BTN_PING)],
+        [InlineKeyboardButton("Reset", callback_data=BTN_RESET)],
     ])
 
 
@@ -100,6 +109,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Parquet — создать архив со свечами BTC/ETH 1m за 365 дней + meta. По умолчанию MEXC futures.\n"
         "Charts — создать архив с читаемыми графиками из Parquet.\n"
         "Log_full — отправить полный лог и индекс архивов.\n"
+        "Status — показать состояние задач и последние архивы.\n"
+        "Ping — время отклика, аптайм, память/CPU/диск, версия.\n"
         "Reset — остановить фоновые задачи и очистить runtime/API state.\n\n"
         f"{api_text}\n"
         "Важно: в коде нет place_order/cancel_order, бот не умеет открывать сделки.",
@@ -114,12 +125,13 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     exports = sorted(runtime.settings.exports_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
     api_mask = runtime.secret_store.load_mexc_api_mask()
     lines = [
-        "Status:",
+        f"Status ({runtime.settings.app_version}):",
         f"- {runtime.active_summary()}",
         f"- symbols: {', '.join(runtime.settings.symbols)}",
         f"- market_type: {runtime.settings.mexc_market_type}",
         f"- days_back: {runtime.settings.days_back}",
         f"- data_root: {runtime.settings.data_root}",
+        f"- version: {runtime.settings.app_version}",
         f"- API: {api_mask['api_key'] if api_mask else 'not set'}",
         "- last exports:",
     ]
@@ -129,6 +141,48 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         lines.append("  • нет")
     await update.effective_message.reply_text("\n".join(lines), reply_markup=main_menu())
+
+
+def _format_duration(seconds: float) -> str:
+    seconds = int(max(0, seconds))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}д {hours}ч {minutes}м {secs}с"
+    if hours:
+        return f"{hours}ч {minutes}м {secs}с"
+    if minutes:
+        return f"{minutes}м {secs}с"
+    return f"{secs}с"
+
+
+async def handle_ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if not await guarded(update, runtime):
+        return
+    started = time.perf_counter()
+    process = psutil.Process(os.getpid())
+    # cpu_percent with interval=None returns value since last call; it is enough as a light health indicator.
+    process_cpu = process.cpu_percent(interval=None)
+    proc_mem = process.memory_info().rss
+    system_mem = psutil.virtual_memory()
+    disk = psutil.disk_usage(str(runtime.settings.data_root))
+    uptime = _format_duration(time.monotonic() - runtime.started_at_monotonic)
+    response_ms = (time.perf_counter() - started) * 1000
+    text = (
+        f"Ping: OK\n"
+        f"- version: {runtime.settings.app_version}\n"
+        f"- response: {response_ms:.1f} ms\n"
+        f"- uptime: {uptime}\n"
+        f"- started UTC: {runtime.started_at_utc.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"- task: {runtime.active_summary()}\n"
+        f"- process RAM: {human_bytes(proc_mem)}\n"
+        f"- system RAM: {system_mem.percent:.1f}% used ({human_bytes(system_mem.used)} / {human_bytes(system_mem.total)})\n"
+        f"- process CPU: {process_cpu:.1f}%\n"
+        f"- disk storage: {disk.percent:.1f}% used ({human_bytes(disk.used)} / {human_bytes(disk.total)})"
+    )
+    await update.callback_query.message.reply_text(text, reply_markup=main_menu())
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -153,6 +207,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif data == BTN_STATUS:
         # Reuse status logic, but callback_query has no effective_message command; it still has message.
         await status(update, context)
+    elif data == BTN_PING:
+        await handle_ping(update, context)
 
 
 async def start_api_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

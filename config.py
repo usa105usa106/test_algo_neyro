@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+
+APP_VERSION = "v10"
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -23,6 +25,7 @@ class Settings:
     mexc_market_type: str
     min_coverage_ratio: float
     secret_encryption_key: str | None
+    app_version: str
 
     @property
     def candles_dir(self) -> Path:
@@ -96,6 +99,7 @@ def load_settings() -> Settings:
         mexc_market_type=market_type,
         min_coverage_ratio=min_coverage_ratio,
         secret_encryption_key=os.getenv("SECRET_ENCRYPTION_KEY", "").strip() or None,
+        app_version=APP_VERSION,
     )
     settings.ensure_dirs()
     return settings
