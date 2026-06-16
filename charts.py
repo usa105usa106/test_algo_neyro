@@ -46,19 +46,25 @@ def _plot_candles(df: pd.DataFrame, title: str, output: Path, figsize=(16, 8), m
     output.parent.mkdir(parents=True, exist_ok=True)
     if len(df) < 2:
         raise ValueError(f"Not enough rows for chart {title}")
+
     plot_df = df[["Open", "High", "Low", "Close", "Volume"]]
-    mpf.plot(
-        plot_df,
-        type="candle",
-        volume=True,
-        style="charles",
-        title=title,
-        mav=mav if len(df) > max(mav) else None,
-        figsize=figsize,
-        tight_layout=True,
-        savefig={"fname": str(output), "dpi": 150, "bbox_inches": "tight"},
-        warn_too_much_data=5000,
-    )
+    kwargs = {
+        "type": "candle",
+        "volume": True,
+        "style": "charles",
+        "title": title,
+        "figsize": figsize,
+        "tight_layout": True,
+        "savefig": {"fname": str(output), "dpi": 150, "bbox_inches": "tight"},
+        "warn_too_much_data": 5000,
+    }
+    # mplfinance rejects mav=None. Add mav only when every MA period fits into the chart.
+    if mav is not None:
+        mav_values = (mav,) if isinstance(mav, int) else tuple(mav)
+        if mav_values and len(df) > max(mav_values):
+            kwargs["mav"] = mav
+
+    mpf.plot(plot_df, **kwargs)
 
 
 def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logger: logging.Logger) -> ChartJobResult:
@@ -70,13 +76,11 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
 
     latest_ts = df_1m.index.max()
 
-    # 1D full year: readable, 365 candles.
     df_1d = resample_ohlcv(df_1m, "1D")
     p = out_root / "overview" / f"{symbol}_1D_full_year.png"
     _plot_candles(df_1d, f"{symbol} 1D full year", p, figsize=(16, 8), mav=(20, 50, 200))
     chart_files.append(str(p.relative_to(out_root.parent)))
 
-    # 4H monthly: one readable chart per month, last 12 months in data.
     df_4h = resample_ohlcv(df_1m, "4H")
     months = sorted(df_4h.index.to_period("M").unique())[-12:]
     for month in months:
@@ -87,7 +91,6 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
         _plot_candles(month_df, f"{symbol} 4H {month}", p, figsize=(16, 8), mav=(20, 50))
         chart_files.append(str(p.relative_to(out_root.parent)))
 
-    # 1H last 90 days, grouped by month.
     df_1h = resample_ohlcv(df_1m, "1H")
     recent_1h = df_1h[df_1h.index >= latest_ts - pd.Timedelta(days=90)]
     recent_months = sorted(recent_1h.index.to_period("M").unique())
@@ -99,7 +102,6 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
         _plot_candles(month_df, f"{symbol} 1H recent {month}", p, figsize=(18, 9), mav=(20, 50))
         chart_files.append(str(p.relative_to(out_root.parent)))
 
-    # 15m last 28 days, four weekly chunks.
     df_15m = resample_ohlcv(df_1m, "15min")
     start_recent = latest_ts - pd.Timedelta(days=28)
     recent_15m = df_15m[df_15m.index >= start_recent]

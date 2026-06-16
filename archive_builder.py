@@ -57,16 +57,20 @@ async def build_data_archive(
     meta_out.mkdir(parents=True, exist_ok=True)
 
     reporter = PercentReporter("Parquet", progress_cb)
-    window = DownloadWindow.last_days(settings.days_back)
     api_mask = secret_store.load_mexc_api_mask()
-    logger.info("Starting data archive build: symbols=%s days=%s", settings.symbols, settings.days_back)
-    await reporter.report(0, f"старт. Символы={settings.symbols}, период={settings.days_back} дней", force=True)
+    logger.info("Starting data archive build: market=%s symbols=%s days=%s", settings.mexc_market_type, settings.symbols, settings.days_back)
+    await reporter.report(0, f"старт. Рынок={settings.mexc_market_type}, символы={settings.symbols}, период={settings.days_back} дней", force=True)
 
-    client = MexcSpotClient(settings.mexc_base_url, logger)
+    client = MexcSpotClient(settings.mexc_base_url, logger, settings.mexc_market_type)
     try:
         await reporter.report(5, "проверяю MEXC public API")
         ping_ok = await client.ping()
         server_time = await client.server_time()
+        interval_ms = 60_000
+        if settings.base_interval in {"1m", "5m", "15m", "30m", "60m", "1h", "4h", "1d"}:
+            from mexc import INTERVAL_MS
+            interval_ms = INTERVAL_MS.get(settings.base_interval, 60_000)
+        window = DownloadWindow.last_days_from_end_ms(settings.days_back, int(server_time["serverTime"]), interval_ms)
         exchange_info = await client.exchange_info(settings.symbols)
         fees = extract_fees_from_exchange_info(exchange_info)
         await reporter.report(10, "MEXC доступен, meta получена")
@@ -96,6 +100,14 @@ async def build_data_archive(
             )
             if df.empty:
                 raise RuntimeError(f"No data downloaded for {symbol}")
+            expected_rows = max(1, int((window.end_ms - window.start_ms) // interval_ms))
+            coverage = len(df) / expected_rows
+            if coverage < settings.min_coverage_ratio:
+                raise RuntimeError(
+                    f"{symbol}: скачано слишком мало свечей: {len(df):,}/{expected_rows:,} "
+                    f"({coverage:.1%}). Это не годовой архив. "
+                    f"Текущий рынок={settings.mexc_market_type}. Для 1m за год нужен futures endpoint или официальный historical data источник."
+                )
 
             await reporter.report(symbol_base + symbol_span * 0.92, f"{symbol}: сохраняю Parquet")
             out_file = candles_out / f"{symbol}_{settings.base_interval}.parquet"
@@ -118,18 +130,20 @@ async def build_data_archive(
             "mexc_public_ping_ok": ping_ok,
             "mexc_server_time": server_time,
             "api_key_saved_mask": api_mask,
-            "note": "Market data uses public MEXC endpoints. API key is stored only if user added it via Api button. No trading/order endpoint exists in this bot.",
+            "note": f"Market data uses public MEXC {settings.mexc_market_type} endpoints. API key is stored only if user added it via Api button. No trading/order endpoint exists in this bot.",
         })
 
         manifest = {
             "archive_type": "research_input_BTC_ETH_data",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
-            "exchange": "MEXC_SPOT",
+            "exchange": "MEXC",
+            "market_type": settings.mexc_market_type,
             "base_url": settings.mexc_base_url,
             "symbols": settings.symbols,
             "base_interval": settings.base_interval,
             "days_back": settings.days_back,
             "download_window": window.as_dict(),
+            "min_coverage_ratio": settings.min_coverage_ratio,
             "candle_files": candle_files,
             "row_counts": row_counts,
             "required_for_chatgpt_research": True,

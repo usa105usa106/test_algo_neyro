@@ -97,7 +97,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "MEXC BTC/ETH Research Collector\n\n"
         "Кнопки:\n"
         "Api — сохранить read-only MEXC API key/secret в зашифрованном виде.\n"
-        "Parquet — создать архив со свечами BTC/ETH 1m за 365 дней + meta.\n"
+        "Parquet — создать архив со свечами BTC/ETH 1m за 365 дней + meta. По умолчанию MEXC futures.\n"
         "Charts — создать архив с читаемыми графиками из Parquet.\n"
         "Log_full — отправить полный лог и индекс архивов.\n"
         "Reset — остановить фоновые задачи и очистить runtime/API state.\n\n"
@@ -117,6 +117,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Status:",
         f"- {runtime.active_summary()}",
         f"- symbols: {', '.join(runtime.settings.symbols)}",
+        f"- market_type: {runtime.settings.mexc_market_type}",
         f"- days_back: {runtime.settings.days_back}",
         f"- data_root: {runtime.settings.data_root}",
         f"- API: {api_mask['api_key'] if api_mask else 'not set'}",

@@ -1,88 +1,38 @@
-# Запуск в Coolify — no-folders version
+# Coolify deploy — no-folders v8
 
-Эта версия сделана для случая, когда в GitHub неудобно создавать папки. Все файлы лежат в корне репозитория.
+Upload all files directly into the repository root. Do not create `src` or `systemd` folders.
 
-## 1. Загрузка в GitHub
+## Coolify setup
 
-Загрузи все файлы из архива в корень репозитория. Не нужно создавать `src` или `systemd`.
+1. Create a GitHub repository.
+2. Upload all files from this archive into the root of the repository.
+3. In Coolify, create a new application from the GitHub repository.
+4. Use Docker Compose or Dockerfile deploy.
+5. Add only these required environment variables:
 
-Обязательные файлы:
-
-```text
-archive_builder.py
-bot.py
-charts.py
-config.py
-file_utils.py
-logging_setup.py
-mexc.py
-security.py
-run.py
-Dockerfile
-docker-compose.yml
-docker-entrypoint.sh
-requirements.txt
+```env
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+ADMIN_TELEGRAM_ID=your_numeric_telegram_id
 ```
 
-Остальные файлы желательно тоже загрузить:
+You do **not** need to add `MEXC_MARKET_TYPE` or `MIN_COVERAGE_RATIO`; they are hardcoded in `config.py`:
 
 ```text
-README.md
-COOLIFY.md
-.env.coolify.example
-.dockerignore
-.gitignore
-mexc-research-collector.service
+MEXC market type: futures
+MEXC futures base URL: https://api.mexc.com
+Minimum coverage: 0.80
 ```
 
-## 2. Coolify resource
+6. Deploy.
+7. Open Telegram and send `/start` to the bot.
+8. Press `Reset`, then `Parquet`, then `Charts`.
 
-В Coolify:
+## Persistent storage
 
-1. New Resource → GitHub repository.
-2. Выбери репозиторий.
-3. Build Pack: Docker Compose, если Coolify видит `docker-compose.yml`.
-4. Если Docker Compose не выбирается, используй Dockerfile.
-
-## 3. Environment Variables
-
-Минимум:
-
-```text
-TELEGRAM_BOT_TOKEN=...
-ADMIN_TELEGRAM_ID=...
-```
-
-Рекомендуемые значения:
-
-```text
-DATA_ROOT=/app/storage
-TELEGRAM_SEND_LIMIT_MB=48
-SYMBOLS=BTCUSDT,ETHUSDT
-DAYS_BACK=365
-BASE_INTERVAL=1m
-MEXC_BASE_URL=https://api.mexc.com
-TZ=UTC
-```
-
-## 4. Persistent storage
-
-В `docker-compose.yml` уже есть volume:
+The Docker Compose file mounts:
 
 ```text
 mexc_research_storage:/app/storage
 ```
 
-Это нужно, чтобы после redeploy не терялись свечи, архивы, логи и encrypted API state.
-
-## 5. Проверка
-
-После Deploy:
-
-1. Открой Telegram.
-2. Напиши боту `/start`.
-3. Нажми `Parquet`.
-4. Дождись архива `research_input_BTC_ETH_data_*.zip`.
-5. После этого нажми `Charts`.
-
-Если что-то упало — нажми `Log_full`.
+Keep this volume so Parquet files, logs, encrypted API state and generated archives survive redeploys.

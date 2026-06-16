@@ -1,106 +1,42 @@
-# MEXC Research Collector Bot — no-folders version
+# MEXC Research Collector Bot — no-folders v8
 
-Telegram-бот для подготовки архивов под staged research:
+Telegram data-collector for BTC/ETH research archives. All project files are in the repository root; no `src/` or `systemd/` folders are required.
 
-- `Parquet` — создаёт архив `research_input_BTC_ETH_data_*.zip` со свечами BTC/ETH 1m за 365 дней.
-- `Charts` — создаёт архив `research_input_BTC_ETH_charts_*.zip` с обзорными графиками.
-- `Api` — сохранить MEXC API через Telegram, read-only; торговых функций в коде нет.
-- `Log_full` — собрать полный лог работы.
-- `Reset` — остановить фоновые задачи и очистить runtime-состояние.
+## What changed in v8
 
-Эта версия специально сделана **без папок**: все файлы лежат в корне GitHub-репозитория.
+- `MEXC_MARKET_TYPE=futures` is now hardcoded in `config.py`.
+- `MIN_COVERAGE_RATIO=0.80` is now hardcoded in `config.py`.
+- Futures base URL is hardcoded as `https://api.mexc.com`.
+- You do not need to add these variables in Coolify.
 
-## Файлы, которые нужно загрузить в GitHub
+## Required Coolify variables
 
-Загрузи все файлы из архива прямо в корень репозитория:
+Only these are required:
 
-```text
-archive_builder.py
-bot.py
-charts.py
-config.py
-file_utils.py
-logging_setup.py
-mexc.py
-security.py
-run.py
-Dockerfile
-docker-compose.yml
-docker-entrypoint.sh
-requirements.txt
-COOLIFY.md
-README.md
-.env.coolify.example
-.dockerignore
-.gitignore
-mexc-research-collector.service
+```env
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+ADMIN_TELEGRAM_ID=your_numeric_telegram_id
 ```
 
-Для Coolify важны: `Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, `requirements.txt`, `run.py` и все `.py` файлы.
+Optional:
 
-## Coolify
-
-В Coolify добавь Environment Variables:
-
-```text
-TELEGRAM_BOT_TOKEN=токен_твоего_бота
-ADMIN_TELEGRAM_ID=твой_telegram_id
-```
-
-Опционально:
-
-```text
+```env
 SYMBOLS=BTCUSDT,ETHUSDT
 DAYS_BACK=365
 BASE_INTERVAL=1m
 TELEGRAM_SEND_LIMIT_MB=48
-MEXC_BASE_URL=https://api.mexc.com
-TZ=UTC
+SECRET_ENCRYPTION_KEY=optional_fernet_key
 ```
 
-После Deploy открой Telegram и напиши боту `/start`.
+## Buttons
 
-## Что создаёт Parquet
+- `Api` — save/read-only MEXC key data if you want, not required for public klines.
+- `Parquet` — creates `research_input_BTC_ETH_data_*.zip`.
+- `Charts` — creates `research_input_BTC_ETH_charts_*.zip`.
+- `Log_full` — sends full logs/runtime state.
+- `Reset` — cancels jobs and clears runtime state.
+- `Status` — shows current job state.
 
-```text
-research_input_BTC_ETH_data_*.zip
-├── manifest.json
-├── candles/
-│   ├── BTCUSDT_1m.parquet
-│   └── ETHUSDT_1m.parquet
-└── meta/
-    ├── exchange_info.json
-    ├── fees.json
-    └── api_status.json
-```
+## Expected output
 
-## Что создаёт Charts
-
-```text
-research_input_BTC_ETH_charts_*.zip
-└── charts/
-    ├── overview/
-    ├── monthly_4h/
-    ├── monthly_1h_recent/
-    └── weekly_15m_recent/
-```
-
-Примерно 40–42 графика.
-
-## Прогресс
-
-При запуске `Parquet` и `Charts` бот отправляет прогресс:
-
-```text
-Start...
-10%...
-20%...
-...
-100% archive ready
-```
-
-Если прогресс долго не меняется — нажми `Log_full`. Если процесс завис — `Reset`.
-
-## Безопасность
-
-В коде нет функций live-trading: нет `place_order`, `cancel_order` и торговых endpoint'ов. Свечи берутся из публичного market-data MEXC.
+`Parquet` downloads about one year of 1m futures klines for BTC/ETH. For a valid one-year archive, expect roughly 525k candles per symbol. If coverage is below 80%, the bot stops and reports the issue instead of silently creating a bad small archive.

@@ -20,6 +20,8 @@ class Settings:
     days_back: int
     base_interval: str
     mexc_base_url: str
+    mexc_market_type: str
+    min_coverage_ratio: float
     secret_encryption_key: str | None
 
     @property
@@ -74,6 +76,13 @@ def load_settings() -> Settings:
     admin_raw = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
     admin_id = int(admin_raw) if admin_raw.isdigit() else None
     data_root = Path(os.getenv("DATA_ROOT", "./storage")).expanduser().resolve()
+    # Hardcoded defaults for this collector.
+    # Do not require Coolify env variables for these two settings.
+    # This bot is a DATA COLLECTOR only; it uses MEXC futures market-data endpoints
+    # because spot 1m klines may return only a short recent slice in this setup.
+    market_type = "futures"
+    mexc_base_url = "https://api.mexc.com"
+    min_coverage_ratio = 0.80
 
     settings = Settings(
         telegram_bot_token=token,
@@ -83,7 +92,9 @@ def load_settings() -> Settings:
         symbols=_split_csv(os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT")),
         days_back=int(os.getenv("DAYS_BACK", "365")),
         base_interval=os.getenv("BASE_INTERVAL", "1m").strip(),
-        mexc_base_url=os.getenv("MEXC_BASE_URL", "https://api.mexc.com").rstrip("/"),
+        mexc_base_url=mexc_base_url.rstrip("/"),
+        mexc_market_type=market_type,
+        min_coverage_ratio=min_coverage_ratio,
         secret_encryption_key=os.getenv("SECRET_ENCRYPTION_KEY", "").strip() or None,
     )
     settings.ensure_dirs()
