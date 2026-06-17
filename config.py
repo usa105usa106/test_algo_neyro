@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-APP_VERSION = "v13"
+APP_VERSION = "v14-2y"
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -94,7 +94,7 @@ def load_settings() -> Settings:
         data_root=data_root,
         telegram_send_limit_mb=int(os.getenv("TELEGRAM_SEND_LIMIT_MB", "48")),
         symbols=_split_csv(os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT")),
-        days_back=int(os.getenv("DAYS_BACK", "365")),
+        days_back=int(os.getenv("DAYS_BACK", "730")),
         base_interval=os.getenv("BASE_INTERVAL", "1m").strip(),
         mexc_base_url=mexc_base_url.rstrip("/"),
         mexc_market_type=market_type,

@@ -90,7 +90,7 @@ class MexcSpotClient:
         self.session = aiohttp.ClientSession(timeout=timeout)
         # Some exchanges can return app-level rate limits even with HTTP 200.
         # Keep requests intentionally slow and serialized. This is a data collector, speed is less
-        # important than completing a clean 365-day archive.
+        # important than completing a clean multi-year archive.
         self.min_request_interval_sec = 1.25 if self.market_type == "futures" else (0.25 if self.market_type == "binance_spot" else 0.35)
         self._last_request_ts = 0.0
         self._request_lock = asyncio.Lock()

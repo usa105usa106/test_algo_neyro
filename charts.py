@@ -77,12 +77,12 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
     latest_ts = df_1m.index.max()
 
     df_1d = resample_ohlcv(df_1m, "1d")
-    p = out_root / "overview" / f"{symbol}_1D_full_year.png"
-    _plot_candles(df_1d, f"{symbol} 1D full year", p, figsize=(16, 8), mav=(20, 50, 200))
+    p = out_root / "overview" / f"{symbol}_1D_full_2y.png"
+    _plot_candles(df_1d, f"{symbol} 1D full 2 years", p, figsize=(18, 9), mav=(20, 50, 200))
     chart_files.append(str(p.relative_to(out_root.parent)))
 
     df_4h = resample_ohlcv(df_1m, "4h")
-    months = sorted(df_4h.index.to_period("M").unique())[-12:]
+    months = sorted(df_4h.index.to_period("M").unique())[-24:]
     for month in months:
         month_df = df_4h[df_4h.index.to_period("M") == month]
         if len(month_df) < 5:
@@ -92,7 +92,7 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
         chart_files.append(str(p.relative_to(out_root.parent)))
 
     df_1h = resample_ohlcv(df_1m, "1h")
-    recent_1h = df_1h[df_1h.index >= latest_ts - pd.Timedelta(days=90)]
+    recent_1h = df_1h[df_1h.index >= latest_ts - pd.Timedelta(days=180)]
     recent_months = sorted(recent_1h.index.to_period("M").unique())
     for month in recent_months:
         month_df = recent_1h[recent_1h.index.to_period("M") == month]
@@ -103,9 +103,9 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
         chart_files.append(str(p.relative_to(out_root.parent)))
 
     df_15m = resample_ohlcv(df_1m, "15min")
-    start_recent = latest_ts - pd.Timedelta(days=28)
+    start_recent = latest_ts - pd.Timedelta(days=56)
     recent_15m = df_15m[df_15m.index >= start_recent]
-    for i in range(4):
+    for i in range(8):
         start = start_recent + pd.Timedelta(days=7 * i)
         end = start + pd.Timedelta(days=7)
         chunk = recent_15m[(recent_15m.index >= start) & (recent_15m.index < end)]

@@ -1,64 +1,63 @@
-# Coolify deploy — BTC/ETH Research Collector v12
+# Coolify deploy — BTC/ETH Research Collector v14-2y
 
-## Важно
+Эта версия собирает **BTC/ETH 1m Parquet за 730 дней / 2 года** и расширенный charts archive.
 
-v12 использует **только Binance Spot public klines** для годовых свечей BTC/ETH.
+## Источник
 
-Не используются:
+- Binance Spot public klines: `https://api.binance.com/api/v3/klines`
+- Futures не используются.
+- Trading endpoints отсутствуют.
 
-- Binance Futures
-- MEXC Futures
-- любые торговые endpoints
+## Env в Coolify
 
-## 1. GitHub
-
-Загрузи все файлы из архива в корень репозитория. Папки создавать не нужно.
-
-## 2. Coolify
-
-Создай новый ресурс из GitHub repo и выбери Docker Compose или Dockerfile.
-
-## 3. Environment Variables
-
-Добавь только:
+Минимально:
 
 ```env
-TELEGRAM_BOT_TOKEN=...
-ADMIN_TELEGRAM_ID=...
+TELEGRAM_BOT_TOKEN=xxx
+ADMIN_TELEGRAM_ID=123456789
 ```
 
-Не добавляй `MEXC_MARKET_TYPE`, `MEXC_BASE_URL`, `MIN_COVERAGE_RATIO`: они не нужны.
+Опционально:
 
-## 4. Проверка
+```env
+DAYS_BACK=730
+SYMBOLS=BTCUSDT,ETHUSDT
+BASE_INTERVAL=1m
+TELEGRAM_SEND_LIMIT_MB=48
+DATA_ROOT=/app/storage
+```
 
-После deploy:
+## Deploy
 
-1. Напиши боту `/start`.
-2. Нажми `Ping`. Должно быть `version: v13`.
-3. Нажми `Reset`.
-4. Нажми `Parquet`.
+1. Залей все файлы из архива в GitHub repo без подпапки.
+2. Создай Coolify service из repo.
+3. Укажи env.
+4. Deploy.
+5. В Telegram: `/start`.
+6. Нажми `Ping`; должно быть `version: v14-2y`.
+7. Нажми `Reset`.
+8. Нажми `Parquet` и дождись 100%.
+9. Нажми `Charts`.
 
-Нормальный прогресс должен идти с ростом строк, например:
+## Важные замечания
+
+- 2 года 1m данных — это около 1,051,200 свечей на символ.
+- Архив может быть больше лимита Telegram Bot API. Бот умеет отправлять part-файлы и README_REASSEMBLE.
+- Если есть доступ к серверу/Coolify volume, лучше скачать оригинальный `.zip` напрямую из `storage/exports`.
+
+## Что отправить в ChatGPT после сбора
+
+Обязательно:
 
 ```text
-BTCUSDT: 10,000/525,600
-BTCUSDT: 100,000/525,600
-...
-ETHUSDT: 100,000/525,600
+research_input_BTC_ETH_data_*.zip
 ```
 
-## 5. Persistent storage
-
-В `docker-compose.yml` есть volume:
+Опционально:
 
 ```text
-mexc_research_storage:/app/storage
+research_input_BTC_ETH_charts_*.zip
+log_full_*.zip, если была ошибка
 ```
 
-В storage лежат свечи, графики, архивы, логи и encrypted state.
-
-
-## v13 fix
-
-- Исправлены pandas frequency aliases для Charts: используются `1d`, `4h`, `1h`, `15min`, чтобы не падать на ошибке `Invalid frequency: 4H`.
-- Если Parquet уже создан успешно, заново Parquet нажимать не нужно — можно сразу нажать Charts после redeploy.
+После загрузки data archive можно просить: проверить NSM v2 на 2-летних данных и продолжить research.
