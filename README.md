@@ -1,54 +1,94 @@
-# MEXC Micro Maker Bot — v0090 TOP15 Reserve Leader-Set Guard
+# BTC/ETH Research Collector Bot — v15-3y
 
-## Что изменено в v0090
+No-folders версия для GitHub + Coolify. Все файлы лежат в корне репозитория.
 
-- Сохранена и усилена логика TOP15 reserve: сигнал голосует только выбранной десяткой, но десятка каждый скан собирается из окна primary TOP10 + reserve 5.
-- Добавлена явная диагностика на панели: `TOP15 window: primary 10 + reserve 5; used X/5; primary stale Y/10; selected fresh Z/10`, чтобы было видно, что резервные 5 не удалены.
-- Добавлен guard для TOP15 reserve: если из-за stale/no-fresh меняется выбранная десятка лидеров, бот сбрасывает 60s acceleration/hold history. Это убирает ложный +2 leader acceleration от самой замены монет, а не от движения рынка.
+## Цель v15-3y
 
-- Версия везде обновлена до `v0090`, profile: `wave_price_tsunami_v0090`.
-- Убрана сырая схема `TOP10 -> top30 replacement`.
-- Убрана зависимость от REST-repair по умолчанию для TOP10 сигнала.
-- `TOP10 leaders` теперь работает через контролируемое окно `TOP15`:
-  - первые 10 монет = основные лидеры;
-  - следующие 5 монет = резерв;
-  - если 1–5 основных лидеров получили `stale/no fresh`, бот временно добирает свежих из резерва;
-  - если основной лидер ожил, он автоматически возвращается в TOP10 на следующем скане, а резервная монета выпадает.
-- Если свежих монет не хватает даже в TOP15, недостающие основные лидеры остаются `neutral/stale`, и сигнал честно ждёт.
-- Все фиксы v0084/v0085 сохранены: partial target scaling, no fee-bump, Last closed отдельно, чистое command menu.
+Собрать новые архивы для продолжения исследования NSM/новых стратегий уже на **3 последних годах BTC/ETH**, а не на одном году.
 
-## TOP10 freshness logic
+## Источник данных
 
-```text
-Primary TOP10:  L0 L1 L2 L3 L4 L5 L6 L7 L8 L9
-Reserve +5:     L10 L11 L12 L13 L14
+- Parquet скачивает **Binance Spot public klines** через `https://api.binance.com/api/v3/klines`.
+- **Binance Futures не используется**.
+- **MEXC Futures не используется**.
+- В коде нет функций открытия/отмены ордеров.
+- API ключ не нужен для свечей.
 
-Если L1, L4, L8 stale:
-Selected TOP10: L0 L2 L3 L5 L6 L7 L9 L10 L11 L12
+## Кнопки
 
-Если L1 ожил:
-Selected TOP10: L0 L1 L2 L3 L5 L6 L7 L9 L10 L11
+- **Api** — опционально сохранить MEXC API key/secret в encrypted storage. Для скачивания свечей ключ не нужен.
+- **Parquet** — создать `research_input_BTC_ETH_data_*.zip` со свечами BTC/ETH 1m за **1095 дней / 3 года**.
+- **Charts** — создать `research_input_BTC_ETH_charts_*.zip` с графиками из локальных Parquet.
+- **Log_full** — забрать полный лог и индекс файлов.
+- **Status** — состояние задач и последние архивы.
+- **Ping** — версия, отклик, uptime, RAM/CPU/disk.
+- **Reset** — остановить фоновые задачи и очистить runtime/temp/API state.
+
+## Coolify env
+
+Нужны только:
+
+```env
+TELEGRAM_BOT_TOKEN=...
+ADMIN_TELEGRAM_ID=...
 ```
 
-То есть резерв используется только временно. Основной TOP10 всегда имеет приоритет, когда данные снова свежие.
+Опционально можно явно поставить:
 
-## Tests
+```env
+DAYS_BACK=1095
+SYMBOLS=BTCUSDT,ETHUSDT
+BASE_INTERVAL=1m
+TELEGRAM_SEND_LIMIT_MB=48
+```
+
+`MEXC_MARKET_TYPE`, `MIN_COVERAGE_RATIO`, `MEXC_BASE_URL` добавлять не надо. Источник данных уже зашит в коде: Binance Spot.
+
+## Что должно получиться
+
+Parquet archive:
 
 ```text
-ACTIVE_MANAGE_THROTTLE_TEST_OK v0090
-BATCH_OPEN_SMOKE_TEST_OK v0090
-CALLBACK_AUDIT_OK callbacks=35 v0090
-COMMAND_MENU_CLEANUP_TEST_OK v0090
-LOOP_TIMEOUT_TEST_OK v0090
-NO_MIRROR_TEST_OK v0090
-PANEL_LIFECYCLE_TEST_OK v0090
-PARTIAL_TARGET_SCALING_TEST_OK v0090
-PRIVATE_THROTTLE_TEST_OK v0090
-SETTINGS_PERSIST_TEST_OK v0090
-TOP10_FIRE_TEST_OK v0090
-TOP15_RESERVE_REPLACEMENT_TEST_OK v0090
-TOP15_RESERVE_PRIMARY_RESTORE_OK v0090
-TOP15_SELECTION_CHANGE_GUARD_TEST_OK v0090
-UI_TEXT_AUDIT_OK v0090
-WAVE_PARTIAL_BATCH_OPEN_TEST_OK v0090
+research_input_BTC_ETH_data_*.zip
+├── manifest.json
+├── candles/
+│   ├── BTCUSDT_1m.parquet
+│   └── ETHUSDT_1m.parquet
+└── meta/
+    ├── exchange_info.json
+    ├── fees.json
+    └── api_status.json
 ```
+
+Ориентир по строкам: около **1,576,800 1m-свечей на символ** за 1095 дней.
+
+Charts archive:
+
+```text
+research_input_BTC_ETH_charts_*.zip
+├── manifest.json
+└── charts/
+    ├── overview/                  # 1D full 3 years
+    ├── monthly_4h/                # 4H по месяцам, последние 36 месяцев
+    ├── monthly_1h_recent/         # 1H последние ~180 дней
+    └── weekly_15m_recent/         # 15m последние 56 дней, 8 недель
+```
+
+## Порядок
+
+1. Deploy в Coolify.
+2. `/start`.
+3. `Ping` — проверить `version: v15-3y`.
+4. `Reset`.
+5. `Parquet`.
+6. После 100% — `Charts`.
+7. Скинуть сюда:
+   - `research_input_BTC_ETH_data_*.zip`
+   - `research_input_BTC_ETH_charts_*.zip` опционально
+
+## v15-3y changes
+
+- Default `DAYS_BACK=1095` вместо 730: теперь собираются 3 последних года.
+- Тексты бота и manifest обновлены под 3 года.
+- Charts расширены под 3 года: 36 месяцев 4H, 180 дней 1H, 56 дней 15m.
+- Сохранилась безопасность: бот не содержит торговых endpoints.

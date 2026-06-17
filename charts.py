@@ -77,12 +77,12 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
     latest_ts = df_1m.index.max()
 
     df_1d = resample_ohlcv(df_1m, "1d")
-    p = out_root / "overview" / f"{symbol}_1D_full_2y.png"
-    _plot_candles(df_1d, f"{symbol} 1D full 2 years", p, figsize=(18, 9), mav=(20, 50, 200))
+    p = out_root / "overview" / f"{symbol}_1D_full_3y.png"
+    _plot_candles(df_1d, f"{symbol} 1D full 3 years", p, figsize=(18, 9), mav=(20, 50, 200))
     chart_files.append(str(p.relative_to(out_root.parent)))
 
     df_4h = resample_ohlcv(df_1m, "4h")
-    months = sorted(df_4h.index.to_period("M").unique())[-24:]
+    months = sorted(df_4h.index.to_period("M").unique())[-36:]
     for month in months:
         month_df = df_4h[df_4h.index.to_period("M") == month]
         if len(month_df) < 5:

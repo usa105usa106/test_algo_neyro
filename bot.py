@@ -103,10 +103,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     api_mask = runtime.secret_store.load_mexc_api_mask()
     api_text = f"API сохранён: {api_mask['api_key']}" if api_mask else "API не задан; свечи всё равно качаются через public Binance Spot endpoints."
     await update.effective_message.reply_text(
-        "BTC/ETH Research Collector v14-2y — Binance Spot\n\n"
+        "BTC/ETH Research Collector v15-3y — Binance Spot\n\n"
         "Кнопки:\n"
         "Api — опционально сохранить MEXC API key/secret в encrypted storage. Для Binance Spot свечей ключ не нужен.\n"
-        "Parquet — создать архив со свечами BTC/ETH 1m за 730 дней / 2 года + meta. Источник: Binance Spot public klines.\n"
+        "Parquet — создать архив со свечами BTC/ETH 1m за 1095 дней / 3 года + meta. Источник: Binance Spot public klines.\n"
         "Charts — создать архив с читаемыми графиками из Parquet.\n"
         "Log_full — отправить полный лог и индекс архивов.\n"
         "Status — показать состояние задач и последние архивы.\n"

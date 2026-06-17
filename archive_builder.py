@@ -105,8 +105,8 @@ async def build_data_archive(
             if coverage < settings.min_coverage_ratio:
                 raise RuntimeError(
                     f"{symbol}: скачано слишком мало свечей: {len(df):,}/{expected_rows:,} "
-                    f"({coverage:.1%}). Это не полный 2-year архив. "
-                    f"Текущий источник={settings.mexc_market_type}. Для 1m за 2 года нужен стабильный historical data источник; Binance Spot public klines должен отдавать полный период."
+                    f"({coverage:.1%}). Это не полный 3-year архив. "
+                    f"Текущий источник={settings.mexc_market_type}. Для 1m за 3 года нужен стабильный historical data источник; Binance Spot public klines должен отдавать полный период."
                 )
 
             await reporter.report(symbol_base + symbol_span * 0.92, f"{symbol}: сохраняю Parquet")
@@ -135,6 +135,7 @@ async def build_data_archive(
 
         manifest = {
             "archive_type": "research_input_BTC_ETH_data",
+            "collector_version": settings.app_version,
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "exchange": "BINANCE_SPOT_PUBLIC_HISTORY_FOR_RESEARCH",
             "market_type": settings.mexc_market_type,
@@ -148,13 +149,13 @@ async def build_data_archive(
             "row_counts": row_counts,
             "required_for_chatgpt_research": True,
             "contents": {
-                "candles": "1m OHLCV parquet files for BTC/ETH for the requested 730-day / 2-year window from Binance Spot public historical klines.",
+                "candles": "1m OHLCV parquet files for BTC/ETH for the requested 1095-day / 3-year window from Binance Spot public historical klines.",
                 "meta/exchange_info.json": "Binance Spot public exchangeInfo symbol fields",
                 "meta/fees.json": "fee placeholder/public fields; verify actual account/exchange fees before live trading",
                 "meta/api_status.json": "public/API status and masked key info",
             },
             "progress_note": "Bot sends 0/10/20/.../100% Telegram updates during archive creation.",
-            "next_step_for_chatgpt": "Upload this 2-year data archive first. Charts archive is optional but useful for visual context. Then ask to recheck NSM v2 on 2-year data.",
+            "next_step_for_chatgpt": "Upload this 3-year data archive first. Charts archive is optional but useful for visual context. Then ask to recheck NSM v2 on 3-year data.",
         }
         write_json(build_dir / "manifest.json", manifest)
 
@@ -197,14 +198,14 @@ async def _make_charts_for_symbol_with_progress(
         if chart_done_cb:
             await chart_done_cb(rel)
 
-    # 1D full 2-year window: readable, ~730 candles.
+    # 1D full 3-year window: readable, ~1095 candles.
     df_1d = resample_ohlcv(df_1m, "1d")
-    p = out_root / "overview" / f"{symbol}_1D_full_2y.png"
-    await plot(df_1d, f"{symbol} 1D full 2 years", p, figsize=(18, 9), mav=(20, 50, 200))
+    p = out_root / "overview" / f"{symbol}_1D_full_3y.png"
+    await plot(df_1d, f"{symbol} 1D full 3 years", p, figsize=(18, 9), mav=(20, 50, 200))
 
-    # 4H monthly: one readable chart per month, last 24 months in data.
+    # 4H monthly: one readable chart per month, last 36 months in data.
     df_4h = resample_ohlcv(df_1m, "4h")
-    months = sorted(df_4h.index.to_period("M").unique())[-24:]
+    months = sorted(df_4h.index.to_period("M").unique())[-36:]
     for month in months:
         month_df = df_4h[df_4h.index.to_period("M") == month]
         if len(month_df) < 5:
@@ -270,7 +271,7 @@ async def build_charts_archive(
 
     chart_files: list[str] = []
     warnings: list[str] = []
-    expected_charts = max(1, len(settings.symbols) * 40)  # 1D + 24 monthly 4H + ~7 monthly 1H + 8 weekly 15m.
+    expected_charts = max(1, len(settings.symbols) * 52)  # 1D + 36 monthly 4H + ~7 monthly 1H + 8 weekly 15m.
     chart_done = 0
 
     async def chart_done_cb(rel_path: str) -> None:
@@ -295,12 +296,13 @@ async def build_charts_archive(
     await reporter.report(92, "пишу manifest")
     manifest = {
         "archive_type": "research_input_BTC_ETH_charts",
+        "collector_version": settings.app_version,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "symbols": settings.symbols,
         "source_parquet_interval": settings.base_interval,
         "chart_set": {
-            "overview": "1D full 2-year window per symbol",
-            "monthly_4h": "4H charts for last 24 months per symbol",
+            "overview": "1D full 3-year window per symbol",
+            "monthly_4h": "4H charts for last 36 months per symbol",
             "monthly_1h_recent": "1H charts for recent ~180 days grouped by month",
             "weekly_15m_recent": "15m charts for recent 56 days split into eight weekly windows",
         },
