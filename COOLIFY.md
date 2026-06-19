@@ -64,3 +64,12 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Version is now `v17_full`.
 - Generated setup headers are `Setup Gold / XAU:`, `Setup Silver / XAG:`, and `Setup Oil / WTI:`.
 - Setup templates do not include a separate `Актив:` line.
+
+
+## v17_full format note
+- Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
+- Limit orders and TP1/TP2/TP3 are written in a column.
+
+## v17_full TP compact format note
+- Setup output embeds TP management directly into TP1/TP2/TP3 lines.
+- Separate `Сопровождение:` section is removed.

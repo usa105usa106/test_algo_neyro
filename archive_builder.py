@@ -112,19 +112,18 @@ Setup {asset_label}:
 Маркет - <пропускаем, нет A+ сетапа / LONG MARKET price / SHORT MARKET price>
 
 Лимит:
-<BUY LIMIT 1: price / SELL LIMIT 1: price / WAIT>
-<BUY LIMIT 2: price / SELL LIMIT 2: price / WAIT>
+SHORT LIMIT 1: <price or WAIT>
+SHORT LIMIT 2: <price or WAIT>
+или
+LONG LIMIT 1: <price or WAIT>
+LONG LIMIT 2: <price or WAIT>
 
-TP1: <price>
-TP2: <price>
-TP3: <price>
+Тейки:
+TP1: <price> — закрыть 33%, SL в б/у
+TP2: <price> — закрыть 33%, SL в б/у
+TP3: <price> — закрыть остаток
 
 SL: <price>
-
-Сопровождение:
-После TP1 <закрыть часть и перенести SL в entry / сильно подтянуть SL>.
-После TP2 <SL строго в entry / закрыть ещё часть>.
-TP3 <закрывает остаток / дальше не держать>.
 
 Убрать лимит:
 <условие, когда снять лимитки, например: если цена ушла к TP1/TP2 без входа — не догонять>
@@ -134,6 +133,11 @@ TP3 <закрывает остаток / дальше не держать>.
 <1–3 коротких предложения по 1D/4H/1H/15m/1m: почему LONG/SHORT/WAIT и почему вход именно от этой зоны>
 
 Rules for the format:
+- Write LIMIT orders in a column, one order per line. Never write both limits on one line.
+- Use SHORT LIMIT for short entries and LONG LIMIT for long entries. Do not write SELL LIMIT or BUY LIMIT.
+- Write TP1/TP2/TP3 in a column, one take-profit per line, with management text on the same TP line. Never write all take-profits on one line.
+- Do not add a separate "Сопровождение" section; management is already inside TP1/TP2/TP3 lines.
+- Write SL on its own separate line.
 - If market entry is not A+, write: Маркет - пропускаем, нет A+ сетапа.
 - Use LIMIT when entry should be only from pullback/reaction zone.
 - Use WAIT if price is late, already near TP, no zone, no clear SL, or timeframes conflict.
@@ -151,71 +155,136 @@ If at least one asset has a setup, return all 5 blocks in this order.
 For assets without a setup, write WAIT inside that asset block.
 
 Setup Gold / XAU:
+
 Маркет - <пропускаем, нет A+ сетапа / LONG MARKET price / SHORT MARKET price>
+
 Лимит:
-<BUY LIMIT 1: price / SELL LIMIT 1: price / WAIT>
-<BUY LIMIT 2: price / SELL LIMIT 2: price / WAIT>
-TP1: <price or WAIT>
-TP2: <price or WAIT>
-TP3: <price or WAIT>
+SHORT LIMIT 1: <price or WAIT>
+SHORT LIMIT 2: <price or WAIT>
+или
+LONG LIMIT 1: <price or WAIT>
+LONG LIMIT 2: <price or WAIT>
+
+Тейки:
+TP1: <price or WAIT> — закрыть 33%, SL в б/у
+TP2: <price or WAIT> — закрыть 33%, SL в б/у
+TP3: <price or WAIT> — закрыть остаток
+
 SL: <price or WAIT>
-Сопровождение: <short management after TP1/TP2/TP3 or WAIT>
-Убрать лимит: <when to remove limits / when idea is broken>
-Причина: <short reason by 1D/4H/1H/15m/1m>
+
+Убрать лимит:
+<...>
+<...>
+
+Причина:
+<...>
 
 Setup BTC:
+
 Маркет - <...>
+
 Лимит:
-<...>
-<...>
-TP1: <...>
-TP2: <...>
-TP3: <...>
+SHORT LIMIT 1: <...>
+SHORT LIMIT 2: <...>
+или
+LONG LIMIT 1: <...>
+LONG LIMIT 2: <...>
+
+Тейки:
+TP1: <...> — закрыть 33%, SL в б/у
+TP2: <...> — закрыть 33%, SL в б/у
+TP3: <...> — закрыть остаток
+
 SL: <...>
-Сопровождение: <...>
-Убрать лимит: <...>
-Причина: <...>
+
+Убрать лимит:
+<...>
+<...>
+
+Причина:
+<...>
 
 Setup ETH:
+
 Маркет - <...>
+
 Лимит:
-<...>
-<...>
-TP1: <...>
-TP2: <...>
-TP3: <...>
+SHORT LIMIT 1: <...>
+SHORT LIMIT 2: <...>
+или
+LONG LIMIT 1: <...>
+LONG LIMIT 2: <...>
+
+Тейки:
+TP1: <...> — закрыть 33%, SL в б/у
+TP2: <...> — закрыть 33%, SL в б/у
+TP3: <...> — закрыть остаток
+
 SL: <...>
-Сопровождение: <...>
-Убрать лимит: <...>
-Причина: <...>
+
+Убрать лимит:
+<...>
+<...>
+
+Причина:
+<...>
 
 Setup Silver / XAG:
+
 Маркет - <...>
+
 Лимит:
-<...>
-<...>
-TP1: <...>
-TP2: <...>
-TP3: <...>
+SHORT LIMIT 1: <...>
+SHORT LIMIT 2: <...>
+или
+LONG LIMIT 1: <...>
+LONG LIMIT 2: <...>
+
+Тейки:
+TP1: <...> — закрыть 33%, SL в б/у
+TP2: <...> — закрыть 33%, SL в б/у
+TP3: <...> — закрыть остаток
+
 SL: <...>
-Сопровождение: <...>
-Убрать лимит: <...>
-Причина: <...>
+
+Убрать лимит:
+<...>
+<...>
+
+Причина:
+<...>
 
 Setup Oil / WTI:
+
 Маркет - <...>
+
 Лимит:
-<...>
-<...>
-TP1: <...>
-TP2: <...>
-TP3: <...>
+SHORT LIMIT 1: <...>
+SHORT LIMIT 2: <...>
+или
+LONG LIMIT 1: <...>
+LONG LIMIT 2: <...>
+
+Тейки:
+TP1: <...> — закрыть 33%, SL в б/у
+TP2: <...> — закрыть 33%, SL в б/у
+TP3: <...> — закрыть остаток
+
 SL: <...>
-Сопровождение: <...>
-Убрать лимит: <...>
-Причина: <...>
+
+Убрать лимит:
+<...>
+<...>
+
+Причина:
+<...>
 
 Rules for the format:
+- Write LIMIT orders in a column, one order per line. Never write both limits on one line.
+- Use SHORT LIMIT for short entries and LONG LIMIT for long entries. Do not write SELL LIMIT or BUY LIMIT.
+- Write TP1/TP2/TP3 in a column, one take-profit per line, with management text on the same TP line. Never write all take-profits on one line.
+- Do not add a separate "Сопровождение" section; management is already inside TP1/TP2/TP3 lines.
+- Write SL on its own separate line.
 - If market entry is not A+, write: Маркет - пропускаем, нет A+ сетапа.
 - Use LIMIT when entry should be only from pullback/reaction zone.
 - Use WAIT if price is late, already near TP, no zone, no clear SL, or timeframes conflict.
@@ -230,7 +299,7 @@ def _chatgpt_task_text(preset: ScanPreset, created_msk: str) -> str:
     strategy_block = """STRATEGY: Elite 5 Rejection / Rostislav-style
 
 ROLE:
-You are a manual/semi-auto trading assistant. Analyze only the archive data/charts and return a concrete setup: LONG / SHORT / WAIT, entry zone, limit orders, SL, TP1/TP2/TP3, trade class, management and short reason.
+You are a manual/semi-auto trading assistant. Analyze only the archive data/charts and return a concrete setup: LONG / SHORT / WAIT, entry zone, limit orders, SL, TP1/TP2/TP3 with management inside TP lines, trade class and short reason.
 Do not give long theory. Do not discuss general market opinions. Answer only with the setup.
 
 TRADING UNIVERSE:

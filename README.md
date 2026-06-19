@@ -177,3 +177,13 @@ If an exact symbol is unavailable, the scan should fail visibly and `/log_full` 
 - Removed confusing exact-candidate remapping in archive resolution.
 
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
+
+
+## v17_full format note
+- Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
+- Limit orders and TP1/TP2/TP3 are written in a column.
+
+## v17_full TP compact format note
+- Setup output now embeds management directly into take-profit lines.
+- TP format: `TP1: price — закрыть 33%, SL в б/у`, `TP2: price — закрыть 33%, SL в б/у`, `TP3: price — закрыть остаток`.
+- Separate `Сопровождение:` section is removed from `setup_format.txt`.
