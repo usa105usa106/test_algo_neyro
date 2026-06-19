@@ -23,9 +23,10 @@ from mexc import to_contract_symbol
 
 MEXC_FUTURES_BASE_URL = "https://api.mexc.com"
 FEE_TEST_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
-FEE_TEST_LEVERAGE = 2
-FEE_TEST_MARGIN_FRACTION = Decimal("0.10")
-FEE_TEST_HOLD_SECONDS = 5 * 60
+FEE_TEST_LEVERAGE = 4
+# Fixed test margin per symbol. With 4x leverage this targets ~12 USDT notional per BTC/ETH trade.
+FEE_TEST_MARGIN_USDT = Decimal("3")
+FEE_TEST_HOLD_SECONDS = 3 * 60
 FEE_TEST_LIMIT_FILL_WAIT_SECONDS = 90
 FEE_TEST_LIMIT_PRICE_OFFSET_BPS = Decimal("2")
 
@@ -71,6 +72,16 @@ def fmt_decimal(value: Decimal) -> str:
     if "E" in str(value) or "e" in str(value):
         return format(value, "f")
     return str(value)
+
+
+def make_external_oid(mode: str, phase: str, symbol: str) -> str:
+    """MEXC Futures externalOid must be <= 32 chars. Keep it compact and unique."""
+    mode_code = "m" if mode == "market" else "l"
+    phase_map = {"open": "o", "close": "c", "fallback": "f"}
+    phase_code = phase_map.get(phase, phase[:1].lower() or "x")
+    sym_code = "b" if symbol.upper().startswith("BTC") else "e" if symbol.upper().startswith("ETH") else symbol[:3].lower()
+    # Example: mob_27de5be20f12, length 16. Well below MEXC max 32.
+    return f"{mode_code}{phase_code}{sym_code}_{uuid4().hex[:12]}"
 
 
 @dataclass
@@ -317,12 +328,16 @@ class MexcFeeTestRunner:
             price = quantize_ceil(ask * (Decimal("1") + offset), price_unit)
         else:
             price = last
-        margin = equity * FEE_TEST_MARGIN_FRACTION
+        margin = FEE_TEST_MARGIN_USDT
         notional = margin * Decimal(FEE_TEST_LEVERAGE)
         raw_vol = notional / (price * contract_size)
         vol = quantize_floor(raw_vol, vol_unit)
+        min_vol_forced = False
         if vol < min_vol:
             vol = min_vol
+            min_vol_forced = True
+        actual_notional = price * contract_size * vol
+        actual_margin = actual_notional / Decimal(FEE_TEST_LEVERAGE)
         plan = FeeTestOrderPlan(
             symbol=symbol,
             contract_symbol=contract_symbol,
@@ -339,6 +354,12 @@ class MexcFeeTestRunner:
             "mode": mode,
             "symbol": symbol,
             "plan": plan.as_dict(),
+            "actual_notional_usdt": str(actual_notional),
+            "actual_margin_usdt": str(actual_margin),
+            "target_margin_usdt": str(margin),
+            "target_notional_usdt": str(notional),
+            "min_vol_forced": min_vol_forced,
+            "warning": "minVol forced higher than requested fixed 3 USDT margin" if min_vol_forced else None,
             "ticker": ticker,
             "contract_detail_subset": {
                 "contractSize": str(contract_size),
@@ -388,7 +409,7 @@ class MexcFeeTestRunner:
         await self.client.change_leverage(plan.symbol, plan.leverage, position_type=1, open_type=1)
         order_type = 5 if mode == "market" else 1
         price = None if mode == "market" else plan.price
-        external_oid = f"fee_{mode}_open_{plan.symbol}_{uuid4().hex[:10]}"
+        external_oid = make_external_oid(mode, "open", plan.symbol)
         resp = await self.client.create_order(
             plan.symbol,
             side=1,  # open long
@@ -450,7 +471,7 @@ class MexcFeeTestRunner:
             offset = FEE_TEST_LIMIT_PRICE_OFFSET_BPS / Decimal("10000")
             # For long close, sell limit slightly below bid so it is likely to fill quickly.
             price = quantize_floor(bid * (Decimal("1") - offset), price_unit)
-        external_oid = f"fee_{mode}_close_{plan.symbol}_{uuid4().hex[:10]}"
+        external_oid = make_external_oid(mode, "close", plan.symbol)
         resp = await self.client.create_order(
             plan.symbol,
             side=4,  # close long
@@ -501,7 +522,7 @@ class MexcFeeTestRunner:
             remaining_positions = await self.client.get_open_positions(plan.symbol)
             remaining_long = sum((d(p.get("holdVol")) for p in remaining_positions if str(p.get("symbol")) == plan.contract_symbol and int(p.get("positionType", 0)) == 1), Decimal("0"))
             if remaining_long > 0:
-                fallback_oid = f"fee_market_fallback_close_{plan.symbol}_{uuid4().hex[:10]}"
+                fallback_oid = make_external_oid("market", "fallback", plan.symbol)
                 fallback_resp = await self.client.create_order(
                     plan.symbol, side=4, order_type=5, vol=remaining_long, price=None, leverage=None,
                     open_type=1, external_oid=fallback_oid, reduce_only=True,
@@ -540,7 +561,7 @@ class MexcFeeTestRunner:
             "mode": mode,
             "symbols": self.symbols,
             "equity_usdt": str(equity),
-            "margin_fraction_per_symbol": str(FEE_TEST_MARGIN_FRACTION),
+            "fixed_margin_usdt_per_symbol": str(FEE_TEST_MARGIN_USDT),
             "leverage": FEE_TEST_LEVERAGE,
             "hold_seconds": FEE_TEST_HOLD_SECONDS,
             "fee_details_before": fee_details,

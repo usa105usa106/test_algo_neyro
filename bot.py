@@ -116,7 +116,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Log_full — отправить полный лог и индекс архивов.\n"
         "Status — показать состояние задач и последние архивы.\n"
         "Ping — время отклика, аптайм, память/CPU/диск, версия.\n"
-        "Limit Price / Market Price — РЕАЛЬНЫЙ MEXC futures fee-test: BTC+ETH long, 10% total equity на сделку, 2x, автозакрытие через 5 минут.\n"
+        "Limit Price / Market Price — РЕАЛЬНЫЙ MEXC futures fee-test: BTC+ETH long, 3 USDT margin на сделку, 4x, автозакрытие через 3 минуты.\n"
         "/log_mexc — полный лог fee-test сделок.\n"
         "Reset — остановить фоновые задачи и очистить runtime/API state.\n\n"
         f"{api_text}\n"
@@ -397,8 +397,8 @@ async def mexc_fee_test_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int, mo
             text=(
                 f"MEXC {mode.upper()} fee-test запускается.\n"
                 "РЕАЛЬНЫЕ сделки: BTCUSDT + ETHUSDT LONG.\n"
-                "Размер: 10% total USDT equity на каждую сделку, leverage 2x, isolated.\n"
-                "Автозакрытие: через 5 минут.\n"
+                "Размер: 3 USDT margin на каждую сделку, leverage 4x, isolated.\n"
+                "Автозакрытие: через 3 минуты.\n"
                 "Логи: /log_mexc"
             ),
         )
