@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-APP_VERSION = "v15-3y"
+APP_VERSION = "v15-3y-mexc-fee-test"
 from pathlib import Path
 from dotenv import load_dotenv
 

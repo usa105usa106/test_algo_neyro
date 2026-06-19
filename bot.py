@@ -26,6 +26,7 @@ from config import Settings, load_settings
 from file_utils import split_file, human_bytes, safe_rmtree
 from logging_setup import setup_logging
 from security import SecretStore
+from mexc_fee_tester import MexcFeeTestRunner, tail_text
 
 BTN_API = "api"
 BTN_PARQUET = "parquet"
@@ -34,6 +35,8 @@ BTN_LOG_FULL = "log_full"
 BTN_RESET = "reset"
 BTN_STATUS = "status"
 BTN_PING = "ping"
+BTN_MEXC_LIMIT = "mexc_limit"
+BTN_MEXC_MARKET = "mexc_market"
 
 
 class BotRuntime:
@@ -43,6 +46,7 @@ class BotRuntime:
         self.secret_store = SecretStore(settings.secrets_dir, settings.state_dir, settings.secret_encryption_key)
         self.active_task: asyncio.Task | None = None
         self.active_task_name: str | None = None
+        self.mexc_fee_test_running: bool = False
         self.awaiting_api_step: dict[int, dict[str, Any]] = {}
         self.last_export: Path | None = None
         self.started_at_monotonic = time.monotonic()
@@ -73,6 +77,7 @@ def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Api", callback_data=BTN_API), InlineKeyboardButton("Parquet", callback_data=BTN_PARQUET)],
         [InlineKeyboardButton("Charts", callback_data=BTN_CHARTS), InlineKeyboardButton("Log_full", callback_data=BTN_LOG_FULL)],
+        [InlineKeyboardButton("Limit Price", callback_data=BTN_MEXC_LIMIT), InlineKeyboardButton("Market Price", callback_data=BTN_MEXC_MARKET)],
         [InlineKeyboardButton("Status", callback_data=BTN_STATUS), InlineKeyboardButton("Ping", callback_data=BTN_PING)],
         [InlineKeyboardButton("Reset", callback_data=BTN_RESET)],
     ])
@@ -111,9 +116,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Log_full — отправить полный лог и индекс архивов.\n"
         "Status — показать состояние задач и последние архивы.\n"
         "Ping — время отклика, аптайм, память/CPU/диск, версия.\n"
+        "Limit Price / Market Price — РЕАЛЬНЫЙ MEXC futures fee-test: BTC+ETH long, 10% total equity на сделку, 2x, автозакрытие через 5 минут.\n"
+        "/log_mexc — полный лог fee-test сделок.\n"
         "Reset — остановить фоновые задачи и очистить runtime/API state.\n\n"
         f"{api_text}\n"
-        "Важно: в коде нет place_order/cancel_order, бот не умеет открывать сделки.",
+        "ВНИМАНИЕ: кнопки Limit/Market открывают реальные тестовые микросделки на MEXC futures, если API key имеет trading permissions.",
         reply_markup=main_menu(),
     )
 
@@ -201,6 +208,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await start_background_job(update, context, "Charts", build_charts_job)
     elif data == BTN_LOG_FULL:
         await handle_log_full(update, context)
+    elif data == BTN_MEXC_LIMIT:
+        await start_background_job(update, context, "MEXC Limit Fee Test", lambda ctx, chat_id: mexc_fee_test_job(ctx, chat_id, "limit"))
+    elif data == BTN_MEXC_MARKET:
+        await start_background_job(update, context, "MEXC Market Fee Test", lambda ctx, chat_id: mexc_fee_test_job(ctx, chat_id, "market"))
     elif data == BTN_RESET:
         runtime.reset()
         await query.message.reply_text("Reset выполнен: фоновые задачи остановлены, runtime/API state очищен, temp work очищен. Архивы exports и logs сохранены.", reply_markup=main_menu())
@@ -216,9 +227,9 @@ async def start_api_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     runtime.awaiting_api_step[user_id] = {"step": "api_key"}
     await update.callback_query.message.reply_text(
-        "Отправь MEXC API KEY одним сообщением, если хочешь сохранить его для meta/status. Для свечей Binance Spot ключ не нужен.\n\n"
-        "Рекомендация: создай ключ только для чтения, без trade/withdraw permissions.\n"
-        "Для свечей Binance Spot ключ не обязателен; я сохраню его только в encrypted storage для meta/status.\n"
+        "Отправь MEXC API KEY одним сообщением. Для свечей Binance Spot ключ не нужен, но для кнопок Limit/Market нужен MEXC Futures API key.\n\n"
+        "Для fee-test включи только нужные Futures permissions: View Account Details, View Order Details, Order Placing. Withdraw не нужен.\n"
+        "Ключ будет сохранён в encrypted storage.\n"
         "Напиши /cancel, чтобы отменить."
     )
 
@@ -262,7 +273,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         runtime.logger.info("API saved via Telegram, key mask=%s", mask.get("api_key"))
         await update.effective_message.reply_text(
             f"API сохранён зашифрованно. Key: {mask['api_key']}\n"
-            "Бот всё равно не умеет открывать сделки: торговых endpoints в коде нет.",
+            "Теперь кнопки Limit Price / Market Price смогут делать реальные MEXC futures fee-tests, если у API key включены futures permissions.",
             reply_markup=main_menu(),
         )
 
@@ -365,6 +376,73 @@ async def handle_log_full(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.callback_query.message.reply_text(f"Log_full ошибка: {exc}")
 
 
+async def mexc_fee_test_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int, mode: str) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if runtime.mexc_fee_test_running:
+        await context.bot.send_message(chat_id=chat_id, text="MEXC fee-test уже запущен. Дождись автозакрытия или смотри /log_mexc.")
+        return
+    api = runtime.secret_store.load_mexc_api()
+    if not api:
+        await context.bot.send_message(chat_id=chat_id, text="MEXC API не сохранён. Нажми Api и сохрани key/secret с futures permissions.")
+        return
+    runtime.mexc_fee_test_running = True
+    runner = MexcFeeTestRunner(api["api_key"], api["api_secret"], runtime.settings.data_root, runtime.logger)
+    try:
+        async def progress(msg: str) -> None:
+            runtime.logger.info(msg)
+            await context.bot.send_message(chat_id=chat_id, text=msg[:3900])
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"MEXC {mode.upper()} fee-test запускается.\n"
+                "РЕАЛЬНЫЕ сделки: BTCUSDT + ETHUSDT LONG.\n"
+                "Размер: 10% total USDT equity на каждую сделку, leverage 2x, isolated.\n"
+                "Автозакрытие: через 5 минут.\n"
+                "Логи: /log_mexc"
+            ),
+        )
+        result = await runner.run(mode, progress_cb=progress)
+        short = (
+            f"MEXC {mode.upper()} fee-test завершён.\n"
+            f"test_id: {result.get('test_id')}\n"
+            f"JSONL: {result.get('log_jsonl')}\n"
+            f"CSV: {result.get('log_csv')}\n"
+            "Проверь в веб-акке fees, а полный лог забери командой /log_mexc."
+        )
+        await context.bot.send_message(chat_id=chat_id, text=short[:3900], reply_markup=main_menu())
+    except asyncio.CancelledError:
+        runtime.logger.warning("MEXC fee-test cancelled; close any open positions manually and check /log_mexc")
+        await context.bot.send_message(chat_id=chat_id, text="MEXC fee-test отменён. Проверь вручную открытые позиции на бирже и /log_mexc.")
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.exception("MEXC fee-test failed: %s", exc)
+        await context.bot.send_message(chat_id=chat_id, text=f"MEXC fee-test ошибка: {exc}\nПроверь позиции на бирже вручную и /log_mexc.")
+    finally:
+        runtime.mexc_fee_test_running = False
+        try:
+            await runner.close()
+        except Exception:
+            pass
+        runtime.active_task = None
+        runtime.active_task_name = None
+
+
+async def handle_log_mexc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if not await guarded(update, runtime):
+        return
+    jsonl = runtime.settings.logs_dir / "mexc_fee_test.jsonl"
+    csv_path = runtime.settings.logs_dir / "mexc_fee_test.csv"
+    tail = tail_text(jsonl, max_chars=3500)
+    await update.effective_message.reply_text("Последний хвост mexc_fee_test.jsonl:\n" + tail[:3600])
+    for path in [jsonl, csv_path]:
+        if path.exists():
+            with path.open("rb") as f:
+                await context.bot.send_document(chat_id=update.effective_chat.id, document=f, filename=path.name)
+        else:
+            await update.effective_message.reply_text(f"Файл ещё не создан: {path.name}")
+
+
 def main() -> None:
     settings = load_settings()
     logger = setup_logging(settings.logs_dir)
@@ -380,6 +458,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(CommandHandler("log_mexc", handle_log_mexc))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
