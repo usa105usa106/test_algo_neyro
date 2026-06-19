@@ -1,13 +1,13 @@
 [Unit]
-Description=MEXC Research Collector Bot
+Description=ChatGPT Scan Bot 30d
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/mexc-research-collector
-EnvironmentFile=/opt/mexc-research-collector/.env
-ExecStart=/opt/mexc-research-collector/venv/bin/python /opt/mexc-research-collector/run.py
+WorkingDirectory=/opt/chatgpt-scan-bot
+EnvironmentFile=/opt/chatgpt-scan-bot/.env
+ExecStart=/opt/chatgpt-scan-bot/venv/bin/python /opt/chatgpt-scan-bot/run.py
 Restart=always
 RestartSec=5
 

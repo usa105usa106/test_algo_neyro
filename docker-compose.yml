@@ -1,5 +1,5 @@
 services:
-  mexc-research-collector-bot:
+  chatgpt-scan-bot:
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,13 +9,15 @@ services:
       ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID}
       DATA_ROOT: /app/storage
       TELEGRAM_SEND_LIMIT_MB: ${TELEGRAM_SEND_LIMIT_MB:-48}
-      SYMBOLS: ${SYMBOLS:-BTCUSDT,ETHUSDT}
-      DAYS_BACK: ${DAYS_BACK:-1095}
+      DAYS_BACK: ${DAYS_BACK:-30}
       BASE_INTERVAL: ${BASE_INTERVAL:-1m}
+      MEXC_BASE_URL: ${MEXC_BASE_URL:-https://api.mexc.com}
+      MIN_COVERAGE_RATIO: ${MIN_COVERAGE_RATIO:-0.80}
+      MIN_EFFECTIVE_DAYS: ${MIN_EFFECTIVE_DAYS:-20}
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
       TZ: ${TZ:-UTC}
     volumes:
-      - mexc_research_storage:/app/storage
+      - chatgpt_scan_storage:/app/storage
 
 volumes:
-  mexc_research_storage:
+  chatgpt_scan_storage:

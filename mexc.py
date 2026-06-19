@@ -76,10 +76,9 @@ class DownloadWindow:
 
 
 class MexcSpotClient:
-    """Market-data-only client. Current default is Binance Spot public klines only.
+    """Market-data-only client for public MEXC Futures klines.
 
-    No trading endpoints exist here. Futures code is retained only as unused legacy fallback,
-    but config.py hardcodes binance_spot.
+    No trading endpoints exist here: no place_order, no cancel_order, no private account actions.
     """
 
     def __init__(self, base_url: str, logger: logging.Logger, market_type: str = "futures"):
@@ -117,10 +116,12 @@ class MexcSpotClient:
                     text = await resp.text()
                     last_text = text[:500]
                     if resp.status in {418, 429} or resp.status >= 500:
+                        if resp.status in {418, 429} and self.market_type == "futures":
+                            self.min_request_interval_sec = min(max(self.min_request_interval_sec * 1.5, self.min_request_interval_sec + 0.5), 10.0)
                         wait = min(10 + attempt * 10, 90)
                         self.logger.warning(
-                            "Market data retry %s/%s status=%s wait=%ss url=%s params=%s body=%s",
-                            attempt, retries, resp.status, wait, url, params, text[:300],
+                            "Market data retry %s/%s status=%s wait=%ss next_pause=%.2fs url=%s params=%s body=%s",
+                            attempt, retries, resp.status, wait, self.min_request_interval_sec, url, params, text[:300],
                         )
                         await asyncio.sleep(wait)
                         continue
@@ -135,10 +136,12 @@ class MexcSpotClient:
                         code = str(data.get("code", ""))
                         message = str(data.get("message", ""))
                         if code in {"510", "429", "418"} or "too frequent" in message.lower():
+                            if self.market_type == "futures":
+                                self.min_request_interval_sec = min(max(self.min_request_interval_sec * 1.5, self.min_request_interval_sec + 0.5), 10.0)
                             wait = min(15 + attempt * 15, 120)
                             self.logger.warning(
-                                "Market data app-level rate limit %s/%s code=%s wait=%ss url=%s params=%s message=%s",
-                                attempt, retries, code, wait, url, params, message,
+                                "Market data app-level rate limit %s/%s code=%s wait=%ss next_pause=%.2fs url=%s params=%s message=%s",
+                                attempt, retries, code, wait, self.min_request_interval_sec, url, params, message,
                             )
                             await asyncio.sleep(wait)
                             continue
@@ -165,7 +168,18 @@ class MexcSpotClient:
     async def server_time(self) -> dict:
         if self.market_type == "futures":
             data = await self._get_json("/api/v1/contract/ping")
-            server_ms = int(data.get("data")) if isinstance(data, dict) and data.get("data") else int(datetime.now(timezone.utc).timestamp() * 1000)
+            # MEXC futures ping has changed response shape over time. Some gateways
+            # return a millisecond timestamp, some return seconds, and some return
+            # only a success/pong payload. Never let this break scans: normalize
+            # numeric timestamps and fall back to local UTC time when unavailable.
+            server_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            raw_value = data.get("data") if isinstance(data, dict) else None
+            try:
+                if raw_value is not None:
+                    parsed = int(raw_value)
+                    server_ms = parsed * 1000 if parsed < 10_000_000_000 else parsed
+            except (TypeError, ValueError):
+                self.logger.warning("Futures ping did not include numeric server time; using local UTC time. raw=%s", data)
             return {"serverTime": server_ms, "source_endpoint": "/api/v1/contract/ping", "raw": data}
         data = await self._get_json("/api/v3/time")
         return {"serverTime": int(data.get("serverTime")), "source_endpoint": "/api/v3/time", "raw": data}
@@ -200,11 +214,19 @@ class MexcSpotClient:
                     except Exception as exc:  # noqa: BLE001
                         self.logger.warning("Futures detail endpoint failed path=%s symbol=%s: %s", path, contract_symbol, exc)
                 if isinstance(detail, list):
-                    match = next((x for x in detail if x.get("symbol") == contract_symbol), None)
-                    detail = match or (detail[0] if detail else None)
-                if isinstance(detail, dict):
+                    # Exact-only mode: never accept the first arbitrary contract when
+                    # the requested symbol was not returned exactly. XAU != XAUT and
+                    # USOIL/WTI != UKOIL/Brent, so substitution is unsafe.
+                    detail = next((x for x in detail if x.get("symbol") == contract_symbol), None)
+                if isinstance(detail, dict) and detail.get("symbol") == contract_symbol:
                     detail["requestedSymbol"] = symbol
                     items.append(detail)
+                elif isinstance(detail, dict):
+                    items.append({
+                        "requestedSymbol": symbol,
+                        "symbol": contract_symbol,
+                        "warning": f"contract detail returned different symbol: {detail.get('symbol')}",
+                    })
                 else:
                     items.append({"requestedSymbol": symbol, "symbol": contract_symbol, "warning": "contract detail unavailable"})
             return {"market_type": "futures", "symbols": items}
@@ -382,7 +404,7 @@ class MexcSpotClient:
                 "quote_volume": float(row[7]) if len(row) > 7 and row[7] is not None else None,
                 "symbol": symbol,
                 "interval": interval,
-                "source_exchange": "BINANCE_SPOT_PUBLIC",
+                "source_exchange": "MEXC_FUTURES_PUBLIC" if symbol.upper().endswith("_USDT") or "_" in symbol else "BINANCE_SPOT_PUBLIC",
             })
         df = pd.DataFrame(clean)
         df = df.drop_duplicates(subset=["open_time"]).sort_values("open_time").reset_index(drop=True)
@@ -395,7 +417,7 @@ def save_dataframe_parquet(df: pd.DataFrame, path: Path) -> None:
 
 
 def extract_fees_from_exchange_info(exchange_info: dict) -> dict:
-    fees = {"source": "Binance Spot public exchangeInfo fields / fee placeholder", "market_type": exchange_info.get("market_type"), "symbols": {}}
+    fees = {"source": "Public exchangeInfo fields / fee placeholder", "market_type": exchange_info.get("market_type"), "symbols": {}}
     for item in exchange_info.get("symbols", []):
         symbol = item.get("requestedSymbol") or item.get("symbol")
         if not symbol:
@@ -406,6 +428,6 @@ def extract_fees_from_exchange_info(exchange_info: dict) -> dict:
             "takerCommission": item.get("takerCommission"),
             "makerFeeRate": item.get("makerFeeRate"),
             "takerFeeRate": item.get("takerFeeRate"),
-            "note": "Public symbol fields; Binance Spot public exchangeInfo does not provide your account-specific maker/taker fees. Verify fees before live trading.",
+            "note": "Public symbol fields; verify actual futures account/exchange fees before live trading.",
         }
     return fees

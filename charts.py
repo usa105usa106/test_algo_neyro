@@ -68,6 +68,12 @@ def _plot_candles(df: pd.DataFrame, title: str, output: Path, figsize=(16, 8), m
 
 
 def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logger: logging.Logger) -> ChartJobResult:
+    """Build exactly the 5 ChatGPT scan charts used by v16.2.
+
+    Kept as a public helper for compatibility, but the old multi-month chart logic was removed
+    so every code path matches the new 30d scan format:
+    1D, 4H, 1H, 15m, 1m.
+    """
     chart_files: list[str] = []
     warnings: list[str] = []
     df_1m = load_ohlcv(candle_path)
@@ -76,46 +82,28 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
 
     latest_ts = df_1m.index.max()
 
+    def plot(df: pd.DataFrame, title: str, output: Path, figsize=(16, 8), mav=(20, 50)) -> None:
+        if len(df) < 2:
+            warnings.append(f"{title}: too few rows")
+            return
+        _plot_candles(df, title, output, figsize, mav)
+        chart_files.append(str(output.relative_to(out_root.parent)))
+
     df_1d = resample_ohlcv(df_1m, "1d")
-    p = out_root / "overview" / f"{symbol}_1D_full_3y.png"
-    _plot_candles(df_1d, f"{symbol} 1D full 3 years", p, figsize=(18, 9), mav=(20, 50, 200))
-    chart_files.append(str(p.relative_to(out_root.parent)))
+    plot(df_1d, f"{symbol} 1D — last 30 days", out_root / symbol / f"{symbol}_1D.png", figsize=(18, 9), mav=(7, 20))
 
     df_4h = resample_ohlcv(df_1m, "4h")
-    months = sorted(df_4h.index.to_period("M").unique())[-36:]
-    for month in months:
-        month_df = df_4h[df_4h.index.to_period("M") == month]
-        if len(month_df) < 5:
-            continue
-        p = out_root / "monthly_4h" / f"{symbol}_4H_{month}.png"
-        _plot_candles(month_df, f"{symbol} 4H {month}", p, figsize=(16, 8), mav=(20, 50))
-        chart_files.append(str(p.relative_to(out_root.parent)))
+    plot(df_4h, f"{symbol} 4H — last 30 days", out_root / symbol / f"{symbol}_4H.png", figsize=(18, 9), mav=(20, 50))
 
     df_1h = resample_ohlcv(df_1m, "1h")
-    recent_1h = df_1h[df_1h.index >= latest_ts - pd.Timedelta(days=180)]
-    recent_months = sorted(recent_1h.index.to_period("M").unique())
-    for month in recent_months:
-        month_df = recent_1h[recent_1h.index.to_period("M") == month]
-        if len(month_df) < 24:
-            continue
-        p = out_root / "monthly_1h_recent" / f"{symbol}_1H_{month}.png"
-        _plot_candles(month_df, f"{symbol} 1H recent {month}", p, figsize=(18, 9), mav=(20, 50))
-        chart_files.append(str(p.relative_to(out_root.parent)))
+    plot(df_1h, f"{symbol} 1H — last 30 days", out_root / symbol / f"{symbol}_1H.png", figsize=(18, 9), mav=(20, 50, 200))
 
     df_15m = resample_ohlcv(df_1m, "15min")
-    start_recent = latest_ts - pd.Timedelta(days=56)
-    recent_15m = df_15m[df_15m.index >= start_recent]
-    for i in range(8):
-        start = start_recent + pd.Timedelta(days=7 * i)
-        end = start + pd.Timedelta(days=7)
-        chunk = recent_15m[(recent_15m.index >= start) & (recent_15m.index < end)]
-        if len(chunk) < 24:
-            warnings.append(f"{symbol} 15m week {i+1}: too few rows")
-            continue
-        p = out_root / "weekly_15m_recent" / f"{symbol}_15m_week_{i+1}.png"
-        title = f"{symbol} 15m week {i+1}: {start.date()} to {end.date()}"
-        _plot_candles(chunk, title, p, figsize=(18, 9), mav=(20, 50))
-        chart_files.append(str(p.relative_to(out_root.parent)))
+    recent_15m = df_15m[df_15m.index >= latest_ts - pd.Timedelta(days=7)]
+    plot(recent_15m, f"{symbol} 15m — last 7 days", out_root / symbol / f"{symbol}_15m.png", figsize=(18, 9), mav=(20, 50, 200))
+
+    recent_1m = df_1m[df_1m.index >= latest_ts - pd.Timedelta(hours=24)]
+    plot(recent_1m, f"{symbol} 1m — last 24 hours", out_root / symbol / f"{symbol}_1m.png", figsize=(18, 9), mav=(20, 50, 200))
 
     logger.info("Created %s chart files for %s", len(chart_files), symbol)
     return ChartJobResult(chart_files=chart_files, warnings=warnings)

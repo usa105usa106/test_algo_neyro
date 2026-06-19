@@ -1,63 +1,51 @@
-# Coolify deploy — BTC/ETH Research Collector v15-3y
+# Coolify deploy — ChatGPT Scan Bot 30d v16.5-chatgpt-scan-30d-exact-symbols-checked
 
-Эта версия собирает **BTC/ETH 1m Parquet за 1095 дней / 3 года** и расширенный charts archive.
+## Required env
 
-## Источник
-
-- Binance Spot public klines: `https://api.binance.com/api/v3/klines`
-- Futures не используются.
-- Trading endpoints отсутствуют.
-
-## Env в Coolify
-
-Минимально:
-
-```env
-TELEGRAM_BOT_TOKEN=xxx
-ADMIN_TELEGRAM_ID=123456789
-```
-
-Опционально:
-
-```env
-DAYS_BACK=1095
-SYMBOLS=BTCUSDT,ETHUSDT
-BASE_INTERVAL=1m
+```text
+TELEGRAM_BOT_TOKEN=...
+ADMIN_TELEGRAM_ID=...
+DATA_ROOT=/data/storage
 TELEGRAM_SEND_LIMIT_MB=48
-DATA_ROOT=/app/storage
+DAYS_BACK=30
+BASE_INTERVAL=1m
+MEXC_BASE_URL=https://api.mexc.com
+SECRET_ENCRYPTION_KEY=
 ```
 
-## Deploy
+## Run
 
-1. Залей все файлы из архива в GitHub repo без подпапки.
-2. Создай Coolify service из repo.
-3. Укажи env.
-4. Deploy.
-5. В Telegram: `/start`.
-6. Нажми `Ping`; должно быть `version: v15-3y`.
-7. Нажми `Reset`.
-8. Нажми `Parquet` и дождись 100%.
-9. Нажми `Charts`.
+1. Deploy container.
+2. Open Telegram.
+3. Send `/start`.
+4. The latest message will contain the current button panel at the bottom of the chat.
+5. Press `/ping`; expected version: `v16.5-chatgpt-scan-30d-exact-symbols-checked`.
+6. Press a scan button, for example `📊 Gold 30d`.
 
-## Важные замечания
+## Output
 
-- 3 года 1m данных — это около 1,576,800 свечей на символ.
-- Архив может быть больше лимита Telegram Bot API. Бот умеет отправлять part-файлы и README_REASSEMBLE.
-- Если есть доступ к серверу/Coolify volume, лучше скачать оригинальный `.zip` напрямую из `storage/exports`.
-
-## Что отправить в ChatGPT после сбора
-
-Обязательно:
+The bot sends archive files like:
 
 ```text
-research_input_BTC_ETH_data_*.zip
+chatgpt_scan-gold-HHMM_DDMM.zip
+chatgpt_scan-multi-HHMM_DDMM.zip
 ```
 
-Опционально:
+Stamp is UTC+3 / MSK style: `HHMM_DDMM`.
+
+## Data source
+
+MEXC Futures public candles:
 
 ```text
-research_input_BTC_ETH_charts_*.zip
-log_full_*.zip, если была ошибка
+https://api.mexc.com/api/v1/contract/kline/{symbol}
 ```
 
-После загрузки data archive можно просить: проверить NSM v2 на 3-летних данных и продолжить research.
+One asset = 1m candles for 30 days + 5 charts.
+Multi = 5 assets × 5 charts = 25 charts.
+
+If MEXC rate-limits or returns “too frequent”, the bot increases pause and retries.
+
+
+### Newly listed symbols / partial history
+If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.

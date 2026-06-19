@@ -2,14 +2,38 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-
-APP_VERSION = "v15-3y-mexc-fee-test"
 from pathlib import Path
+
 from dotenv import load_dotenv
 
+APP_VERSION = "v16.5-chatgpt-scan-30d-exact-symbols-checked"
 
-def _split_csv(value: str) -> list[str]:
-    return [x.strip().upper() for x in value.split(",") if x.strip()]
+
+@dataclass(frozen=True)
+class ScanPreset:
+    key: str
+    title: str
+    symbols: list[str]
+
+
+SCAN_PRESETS: dict[str, ScanPreset] = {
+    "gold": ScanPreset("gold", "Gold 30d", ["XAU_USDT"]),
+    "btc": ScanPreset("btc", "BTC 30d", ["BTC_USDT"]),
+    "eth": ScanPreset("eth", "ETH 30d", ["ETH_USDT"]),
+    "silver": ScanPreset("silver", "Silver 30d", ["SILVER_USDT"]),
+    "oil": ScanPreset("oil", "Oil 30d", ["USOIL_USDT"]),
+    "multi": ScanPreset("multi", "Multi 5 assets 30d", ["XAU_USDT", "BTC_USDT", "ETH_USDT", "SILVER_USDT", "USOIL_USDT"]),
+}
+
+# Exact symbols used by scan buttons and Symbols check.
+# No automatic fallback/substitution is used, because XAU vs XAUT and WTI vs Brent have different prices.
+SYMBOL_CANDIDATES: dict[str, list[str]] = {
+    "gold": ["XAU_USDT"],      # GOLD(XAU)USDT
+    "btc": ["BTC_USDT"],
+    "eth": ["ETH_USDT"],
+    "silver": ["SILVER_USDT"], # SILVER(XAG)USDT
+    "oil": ["USOIL_USDT"],     # OIL(WTI)USDT
+}
 
 
 @dataclass(frozen=True)
@@ -18,12 +42,12 @@ class Settings:
     admin_telegram_id: int | None
     data_root: Path
     telegram_send_limit_mb: int
-    symbols: list[str]
     days_back: int
     base_interval: str
     mexc_base_url: str
     mexc_market_type: str
     min_coverage_ratio: float
+    min_effective_days: float
     secret_encryption_key: str | None
     app_version: str
 
@@ -79,26 +103,18 @@ def load_settings() -> Settings:
     admin_raw = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
     admin_id = int(admin_raw) if admin_raw.isdigit() else None
     data_root = Path(os.getenv("DATA_ROOT", "./storage")).expanduser().resolve()
-    # Hardcoded defaults for this collector.
-    # Do not require Coolify env variables for these two settings.
-    # Hardcoded: Binance SPOT public klines only.
-    # No Binance Futures endpoints are used, because futures can be blocked by region/authorization.
-    # MEXC API key may still be stored by Api button for future meta/status, but candles are downloaded from Binance Spot.
-    market_type = "binance_spot"
-    mexc_base_url = "https://api.binance.com"
-    min_coverage_ratio = 0.80
 
     settings = Settings(
         telegram_bot_token=token,
         admin_telegram_id=admin_id,
         data_root=data_root,
         telegram_send_limit_mb=int(os.getenv("TELEGRAM_SEND_LIMIT_MB", "48")),
-        symbols=_split_csv(os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT")),
-        days_back=int(os.getenv("DAYS_BACK", "1095")),
+        days_back=int(os.getenv("DAYS_BACK", "30")),
         base_interval=os.getenv("BASE_INTERVAL", "1m").strip(),
-        mexc_base_url=mexc_base_url.rstrip("/"),
-        mexc_market_type=market_type,
-        min_coverage_ratio=min_coverage_ratio,
+        mexc_base_url=os.getenv("MEXC_BASE_URL", "https://api.mexc.com").strip().rstrip("/"),
+        mexc_market_type="futures",
+        min_coverage_ratio=float(os.getenv("MIN_COVERAGE_RATIO", "0.80")),
+        min_effective_days=float(os.getenv("MIN_EFFECTIVE_DAYS", "20")),
         secret_encryption_key=os.getenv("SECRET_ENCRYPTION_KEY", "").strip() or None,
         app_version=APP_VERSION,
     )

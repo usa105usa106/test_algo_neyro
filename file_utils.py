@@ -13,6 +13,12 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
 
 
+def moscow_scan_stamp() -> str:
+    # UTC+3 / Moscow-style stamp for user-facing Telegram archive names: HHMM_DDMM.
+    from datetime import timedelta
+    return (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%H%M_%d%m")
+
+
 def file_sha256(path: Path, block_size: int = 1024 * 1024) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
