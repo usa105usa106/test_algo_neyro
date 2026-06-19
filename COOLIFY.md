@@ -1,4 +1,4 @@
-# Coolify deploy — ChatGPT Scan Bot 30d v17_full
+# Coolify deploy — ChatGPT Scan Bot 30d v17_full_strict_lines
 
 ## Required env
 
@@ -19,7 +19,7 @@ SECRET_ENCRYPTION_KEY=
 2. Open Telegram.
 3. Send `/start`.
 4. The latest message will contain the current button panel at the bottom of the chat.
-5. Press `/ping`; expected version: `v17_full`.
+5. Press `/ping`; expected version: `v17_full_strict_lines`.
 6. Press a scan button, for example `📊 Gold 30d`, or send a text symbol like `xrp` for a custom exact-symbol archive.
 
 ## Output
@@ -52,7 +52,7 @@ If MEXC rate-limits or returns “too frequent”, the bot increases pause and r
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## v17_full update
+## v17_full_strict_lines update
 - Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
 - Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
 - Removed confusing exact-candidate remapping in archive resolution.
@@ -60,16 +60,20 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
 
 
-## v17_full update
-- Version is now `v17_full`.
+## v17_full_strict_lines update
+- Version is now `v17_full_strict_lines`.
 - Generated setup headers are `Setup Gold / XAU:`, `Setup Silver / XAG:`, and `Setup Oil / WTI:`.
 - Setup templates do not include a separate `Актив:` line.
 
 
-## v17_full format note
+## v17_full_strict_lines format note
 - Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
 - Limit orders and TP1/TP2/TP3 are written in a column.
 
-## v17_full TP compact format note
+## v17_full_strict_lines TP compact format note
 - Setup output embeds TP management directly into TP1/TP2/TP3 lines.
 - Separate `Сопровождение:` section is removed.
+
+## v17_full_strict_lines update
+- Setup output format is now strict vertical format inside one markdown `txt` code block.
+- This prevents ChatGPT from merging LIMIT and TP lines into one paragraph.

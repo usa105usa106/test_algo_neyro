@@ -99,24 +99,27 @@ def _setup_format_text(preset: ScanPreset) -> str:
     if len(preset.symbols) == 1:
         asset_label = _asset_label_for_preset(preset)
         return f"""SETUP_FORMAT.txt
-Use this exact structure when answering from this archive.
-Answer in Russian only. No extra comments before or after the setup. Do not add an "Актив:" line.
+CRITICAL OUTPUT RULES:
+- Answer in Russian only.
+- Return ONLY the setup. No comments before or after.
+- The final answer MUST be one markdown txt code block: start with ```txt and end with ```.
+- Line breaks are mandatory. Do NOT write LIMIT orders or TP levels in one paragraph.
+- Copy the vertical structure exactly.
+- Do not add an \"Актив:\" line.
 
-If there is NO clean setup, answer exactly one line:
+If there is NO clean setup, answer exactly one line, without code block:
 wait, сейчас лучше не входить, подожди и пришли новый архив.
 
-If there IS a setup, answer exactly like this:
+If there IS a setup, answer exactly in this vertical format:
 
+```txt
 Setup {asset_label}:
 
-Маркет - <пропускаем, нет A+ сетапа / LONG MARKET price / SHORT MARKET price>
+Маркет - пропускаем, нет A+ сетапа
 
 Лимит:
 SHORT LIMIT 1: <price or WAIT>
 SHORT LIMIT 2: <price or WAIT>
-или
-LONG LIMIT 1: <price or WAIT>
-LONG LIMIT 2: <price or WAIT>
 
 Тейки:
 TP1: <price> — закрыть 33%, SL в б/у
@@ -126,44 +129,59 @@ TP3: <price> — закрыть остаток
 SL: <price>
 
 Убрать лимит:
-<условие, когда снять лимитки, например: если цена ушла к TP1/TP2 без входа — не догонять>
-<условие, когда идея сломана, например: если пробой и закрепление выше/ниже SL-зоны>
+<условие, когда снять лимитки: если цена ушла к TP1/TP2 без входа — не догонять>
+<условие, когда идея сломана: если пробой и закрепление выше/ниже SL-зоны>
 
 Причина:
-<1–3 коротких предложения по 1D/4H/1H/15m/1m: почему LONG/SHORT/WAIT и почему вход именно от этой зоны>
+<1–3 коротких предложения по 1D/4H/1H/15m/1m>
+```
 
-Rules for the format:
-- Write LIMIT orders in a column, one order per line. Never write both limits on one line.
-- Use SHORT LIMIT for short entries and LONG LIMIT for long entries. Do not write SELL LIMIT or BUY LIMIT.
-- Write TP1/TP2/TP3 in a column, one take-profit per line, with management text on the same TP line. Never write all take-profits on one line.
-- Do not add a separate "Сопровождение" section; management is already inside TP1/TP2/TP3 lines.
-- Write SL on its own separate line.
-- If market entry is not A+, write: Маркет - пропускаем, нет A+ сетапа.
-- Use LIMIT when entry should be only from pullback/reaction zone.
-- Use WAIT if price is late, already near TP, no zone, no clear SL, or timeframes conflict.
-- Do not write long theory. Do not add warnings unrelated to the setup.
+For LONG setup, use this same vertical structure, but the limit block must be:
+```txt
+Лимит:
+LONG LIMIT 1: <price or WAIT>
+LONG LIMIT 2: <price or WAIT>
+```
+
+For A+ market setup, the market line can be:
+```txt
+Маркет - LONG MARKET <price>
+```
+or
+```txt
+Маркет - SHORT MARKET <price>
+```
+
+ABSOLUTE FORMAT BANS:
+- NEVER write: Лимит: SHORT LIMIT 1: ... SHORT LIMIT 2: ...
+- NEVER write: Тейки: TP1: ... TP2: ... TP3: ...
+- NEVER write SELL LIMIT or BUY LIMIT.
+- NEVER add a separate "Сопровождение" section.
+- NEVER put two prices on the same line unless it is a range in Причина/Убрать лимит.
 """.strip()
 
     return """SETUP_FORMAT.txt
-Use this exact structure when answering from this multi-asset archive.
-Answer in Russian only. No extra comments before or after the setups. Do not add "Актив:" lines.
+CRITICAL OUTPUT RULES:
+- Answer in Russian only.
+- Return ONLY the setups. No comments before or after.
+- The final answer MUST be one markdown txt code block: start with ```txt and end with ```.
+- Line breaks are mandatory. Do NOT write LIMIT orders or TP levels in one paragraph.
+- Copy the vertical structure exactly.
+- Do not add "Актив:" lines.
 
-If there is NO clean setup on all assets, answer exactly one line:
+If there is NO clean setup on all assets, answer exactly one line, without code block:
 wait, сейчас лучше не входить, подожди и пришли новый архив.
 
-If at least one asset has a setup, return all 5 blocks in this order.
-For assets without a setup, write WAIT inside that asset block.
+If at least one asset has a setup, return blocks in this order. For assets without a setup, write WAIT inside that asset block.
 
+```txt
 Setup Gold / XAU:
 
-Маркет - <пропускаем, нет A+ сетапа / LONG MARKET price / SHORT MARKET price>
+Маркет - пропускаем, нет A+ сетапа
 
 Лимит:
 SHORT LIMIT 1: <price or WAIT>
 SHORT LIMIT 2: <price or WAIT>
-или
-LONG LIMIT 1: <price or WAIT>
-LONG LIMIT 2: <price or WAIT>
 
 Тейки:
 TP1: <price or WAIT> — закрыть 33%, SL в б/у
@@ -181,21 +199,18 @@ SL: <price or WAIT>
 
 Setup BTC:
 
-Маркет - <...>
+Маркет - пропускаем, нет A+ сетапа
 
 Лимит:
-SHORT LIMIT 1: <...>
-SHORT LIMIT 2: <...>
-или
-LONG LIMIT 1: <...>
-LONG LIMIT 2: <...>
+SHORT LIMIT 1: <price or WAIT>
+SHORT LIMIT 2: <price or WAIT>
 
 Тейки:
-TP1: <...> — закрыть 33%, SL в б/у
-TP2: <...> — закрыть 33%, SL в б/у
-TP3: <...> — закрыть остаток
+TP1: <price or WAIT> — закрыть 33%, SL в б/у
+TP2: <price or WAIT> — закрыть 33%, SL в б/у
+TP3: <price or WAIT> — закрыть остаток
 
-SL: <...>
+SL: <price or WAIT>
 
 Убрать лимит:
 <...>
@@ -206,21 +221,18 @@ SL: <...>
 
 Setup ETH:
 
-Маркет - <...>
+Маркет - пропускаем, нет A+ сетапа
 
 Лимит:
-SHORT LIMIT 1: <...>
-SHORT LIMIT 2: <...>
-или
-LONG LIMIT 1: <...>
-LONG LIMIT 2: <...>
+SHORT LIMIT 1: <price or WAIT>
+SHORT LIMIT 2: <price or WAIT>
 
 Тейки:
-TP1: <...> — закрыть 33%, SL в б/у
-TP2: <...> — закрыть 33%, SL в б/у
-TP3: <...> — закрыть остаток
+TP1: <price or WAIT> — закрыть 33%, SL в б/у
+TP2: <price or WAIT> — закрыть 33%, SL в б/у
+TP3: <price or WAIT> — закрыть остаток
 
-SL: <...>
+SL: <price or WAIT>
 
 Убрать лимит:
 <...>
@@ -231,21 +243,18 @@ SL: <...>
 
 Setup Silver / XAG:
 
-Маркет - <...>
+Маркет - пропускаем, нет A+ сетапа
 
 Лимит:
-SHORT LIMIT 1: <...>
-SHORT LIMIT 2: <...>
-или
-LONG LIMIT 1: <...>
-LONG LIMIT 2: <...>
+SHORT LIMIT 1: <price or WAIT>
+SHORT LIMIT 2: <price or WAIT>
 
 Тейки:
-TP1: <...> — закрыть 33%, SL в б/у
-TP2: <...> — закрыть 33%, SL в б/у
-TP3: <...> — закрыть остаток
+TP1: <price or WAIT> — закрыть 33%, SL в б/у
+TP2: <price or WAIT> — закрыть 33%, SL в б/у
+TP3: <price or WAIT> — закрыть остаток
 
-SL: <...>
+SL: <price or WAIT>
 
 Убрать лимит:
 <...>
@@ -256,21 +265,18 @@ SL: <...>
 
 Setup Oil / WTI:
 
-Маркет - <...>
+Маркет - пропускаем, нет A+ сетапа
 
 Лимит:
-SHORT LIMIT 1: <...>
-SHORT LIMIT 2: <...>
-или
-LONG LIMIT 1: <...>
-LONG LIMIT 2: <...>
+SHORT LIMIT 1: <price or WAIT>
+SHORT LIMIT 2: <price or WAIT>
 
 Тейки:
-TP1: <...> — закрыть 33%, SL в б/у
-TP2: <...> — закрыть 33%, SL в б/у
-TP3: <...> — закрыть остаток
+TP1: <price or WAIT> — закрыть 33%, SL в б/у
+TP2: <price or WAIT> — закрыть 33%, SL в б/у
+TP3: <price or WAIT> — закрыть остаток
 
-SL: <...>
+SL: <price or WAIT>
 
 Убрать лимит:
 <...>
@@ -278,19 +284,31 @@ SL: <...>
 
 Причина:
 <...>
+```
 
-Rules for the format:
-- Write LIMIT orders in a column, one order per line. Never write both limits on one line.
-- Use SHORT LIMIT for short entries and LONG LIMIT for long entries. Do not write SELL LIMIT or BUY LIMIT.
-- Write TP1/TP2/TP3 in a column, one take-profit per line, with management text on the same TP line. Never write all take-profits on one line.
-- Do not add a separate "Сопровождение" section; management is already inside TP1/TP2/TP3 lines.
-- Write SL on its own separate line.
-- If market entry is not A+, write: Маркет - пропускаем, нет A+ сетапа.
-- Use LIMIT when entry should be only from pullback/reaction zone.
-- Use WAIT if price is late, already near TP, no zone, no clear SL, or timeframes conflict.
-- Do not write long theory. Do not add warnings unrelated to the setup.
+For LONG setups, replace the limit block with:
+```txt
+Лимит:
+LONG LIMIT 1: <price or WAIT>
+LONG LIMIT 2: <price or WAIT>
+```
+
+For A+ market setup, the market line can be:
+```txt
+Маркет - LONG MARKET <price>
+```
+or
+```txt
+Маркет - SHORT MARKET <price>
+```
+
+ABSOLUTE FORMAT BANS:
+- NEVER write: Лимит: SHORT LIMIT 1: ... SHORT LIMIT 2: ...
+- NEVER write: Тейки: TP1: ... TP2: ... TP3: ...
+- NEVER write SELL LIMIT or BUY LIMIT.
+- NEVER add a separate "Сопровождение" section.
+- NEVER put two limit orders or all take-profits in one line.
 """.strip()
-
 
 def _chatgpt_task_text(preset: ScanPreset, created_msk: str) -> str:
     assets = ", ".join(preset.symbols)
