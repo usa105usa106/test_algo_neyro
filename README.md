@@ -1,10 +1,10 @@
-# ChatGPT Scan Bot 30d — v16.5-chatgpt-scan-30d-exact-symbols-checked
+# ChatGPT Scan Bot 30d — v17_full
 
 Telegram bot for manual / semi-automatic trading analysis with ChatGPT.
 
 ## What changed
 
-Old 3-year BTC/ETH research buttons are removed from the menu. The bot now has only 30-day scan buttons and service buttons.
+Old 3-year BTC/ETH research buttons are removed from the menu. The bot now has only 30-day scan buttons, service buttons, and text-based custom symbol scans.
 
 ## Main buttons
 
@@ -26,12 +26,13 @@ https://api.mexc.com/api/v1/contract/kline/{symbol}
 
 Base interval: `Min1` / bot config `1m`.
 
-The bot downloads 1m OHLC for the last 30 days and builds exactly 5 charts per asset:
+The bot downloads 1m OHLC for the last 30 days and builds exactly 5 charts per asset.
+Each chart title includes the latest close price and the chart draws a dashed horizontal line at that latest close.
 
 ```text
-1D   — last 30 days
-4H   — last 30 days
-1H   — last 30 days
+1D   — requested 30d / available actual days
+4H   — requested 30d / available actual days
+1H   — requested 30d / available actual days
 15m  — last 7 days
 1m   — last 24 hours
 ```
@@ -51,6 +52,26 @@ Multi 30d  -> XAU_USDT + BTC_USDT + ETH_USDT + SILVER_USDT + USOIL_USDT
 
 No fallback/substitution is used. `⚙️ Symbols check` verifies only the exact symbols listed above.
 
+
+## Custom text symbol scan
+
+Main buttons stay focused on the 5 priority assets. For another MEXC Futures USDT symbol, send a short text message in the chat:
+
+```text
+xrp
+sol
+bnb
+XRP_USDT
+```
+
+The bot converts `xrp` to exact symbol `XRP_USDT`, collects the same 30d 1m archive, builds the same 5 charts, and sends:
+
+```text
+chatgpt_scan-xrp-HHMM_DDMM.zip
+```
+
+No fallback/substitution is used for custom symbols either. If the exact contract is unavailable on MEXC Futures, the scan fails visibly and `/log_full` should be used for diagnostics.
+
 ## Archive name
 
 Archive name uses UTC+3 / Moscow-style creation time:
@@ -65,6 +86,21 @@ Example:
 ```text
 chatgpt_scan-gold-2326_1906.zip
 ```
+
+
+## Setup headers
+
+Generated instruction files require these human-readable setup headers:
+
+```text
+Setup Gold / XAU:
+Setup BTC:
+Setup ETH:
+Setup Silver / XAG:
+Setup Oil / WTI:
+```
+
+The setup answer must not include a separate `Актив:` line.
 
 ## Archive contents
 
@@ -111,7 +147,7 @@ No trading endpoints exist in this bot: no `place_order`, no `cancel_order`, no 
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## v16.4 exact-symbol update
+## v17_full exact-symbol update
 
 - Gold exact: `XAU_USDT` = MEXC `GOLD(XAU)USDT`.
 - BTC exact: `BTC_USDT`.
@@ -121,7 +157,7 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - `XAUT_USDT` and `UKOIL_USDT` are intentionally not used as replacements because prices differ.
 
 
-## v16.4 exact-symbol rule
+## v17_full exact-symbol rule
 
 Fallbacks are disabled intentionally. XAU and XAUT have different prices, and WTI and Brent have different prices.
 The bot scans only these exact trade symbols:
@@ -133,3 +169,11 @@ The bot scans only these exact trade symbols:
 - Oil: `USOIL_USDT` = `OIL(WTI)USDT`
 
 If an exact symbol is unavailable, the scan should fail visibly and `/log_full` should be used for diagnostics.
+
+
+## v17_full update
+- Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
+- Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
+- Removed confusing exact-candidate remapping in archive resolution.
+
+- Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.

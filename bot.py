@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,6 +69,78 @@ class BotRuntime:
         self.secret_store.clear()
         safe_rmtree(self.settings.work_dir)
 
+
+
+_CUSTOM_SYMBOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,24}$")
+
+# User-friendly aliases for text-triggered scans. These are exact mappings, not fallbacks:
+# writing "gold" must mean the same exact tradable contract as the Gold button.
+_CUSTOM_SYMBOL_ALIASES = {
+    "btc": "BTC_USDT",
+    "bitcoin": "BTC_USDT",
+    "eth": "ETH_USDT",
+    "ethereum": "ETH_USDT",
+    "xau": "XAU_USDT",
+    "gold": "XAU_USDT",
+    "xag": "SILVER_USDT",
+    "silver": "SILVER_USDT",
+    "oil": "USOIL_USDT",
+    "wti": "USOIL_USDT",
+    "usoil": "USOIL_USDT",
+}
+
+_CUSTOM_PRESET_KEYS = {
+    "XAU_USDT": ("gold", "Gold 30d"),
+    "BTC_USDT": ("btc", "BTC 30d"),
+    "ETH_USDT": ("eth", "ETH 30d"),
+    "SILVER_USDT": ("silver", "Silver 30d"),
+    "USOIL_USDT": ("oil", "Oil 30d"),
+}
+
+
+def _normalize_custom_symbol(text: str) -> str | None:
+    """Convert a short Telegram text like 'eth', 'gold', 'oil' or 'xrp' to an exact MEXC Futures symbol.
+
+    Exact-only policy: aliases map only to the intended exact contract. There is no fallback
+    or automatic substitution between different priced instruments such as XAU/XAUT or WTI/Brent.
+    It does not accept sentences, spaces, URLs, or command-like text.
+    """
+    raw = (text or "").strip()
+    if not raw or raw.startswith("/") or " " in raw or "\n" in raw:
+        return None
+    if not _CUSTOM_SYMBOL_RE.fullmatch(raw):
+        return None
+
+    alias_key = raw.lower().replace("-", "_").replace("_", "")
+    if alias_key in _CUSTOM_SYMBOL_ALIASES:
+        return _CUSTOM_SYMBOL_ALIASES[alias_key]
+
+    symbol = raw.upper().replace("-", "_")
+    if "_" not in symbol:
+        if symbol.endswith("USDT") and len(symbol) > 4:
+            symbol = symbol[:-4] + "_USDT"
+        else:
+            symbol = f"{symbol}_USDT"
+    elif symbol.endswith("USDT") and not symbol.endswith("_USDT"):
+        symbol = symbol[:-4].rstrip("_") + "_USDT"
+    if not symbol.endswith("_USDT"):
+        return None
+    if len(symbol) > 32:
+        return None
+    return symbol
+
+
+def _custom_preset_from_text(text: str) -> ScanPreset | None:
+    symbol = _normalize_custom_symbol(text)
+    if not symbol:
+        return None
+    if symbol in _CUSTOM_PRESET_KEYS:
+        key, title = _CUSTOM_PRESET_KEYS[symbol]
+        return ScanPreset(key, title, [symbol])
+    base = symbol[:-5] if symbol.endswith("_USDT") else symbol
+    key = base.lower().replace("_", "")
+    title = f"{base} 30d"
+    return ScanPreset(key, title, [symbol])
 
 def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -253,11 +326,18 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not user:
         return
     state = runtime.awaiting_api_step.get(user.id)
+    text = (update.effective_message.text or "").strip()
     if not state:
-        await reply_with_menu(update, "Выбери действие кнопкой или отправь /start, чтобы опустить панель вниз.")
+        preset = _custom_preset_from_text(text)
+        if preset:
+            await start_scan_job(update, context, preset)
+            return
+        await reply_with_menu(
+            update,
+            "Выбери действие кнопкой, отправь /start, или напиши symbol для кастомного архива, например: xrp / sol / XRP_USDT.",
+        )
         return
 
-    text = (update.effective_message.text or "").strip()
     if text.lower() in {"/cancel", "cancel", "отмена"}:
         runtime.awaiting_api_step.pop(user.id, None)
         await reply_with_menu(update, "Ок, отменено.")

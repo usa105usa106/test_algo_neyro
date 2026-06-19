@@ -42,21 +42,38 @@ def resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     return out
 
 
+def _format_price(value: float) -> str:
+    """Compact price formatting for chart titles/labels."""
+    if abs(value) >= 1000:
+        return f"{value:,.2f}"
+    if abs(value) >= 100:
+        return f"{value:.2f}"
+    if abs(value) >= 1:
+        return f"{value:.4f}"
+    return f"{value:.8f}"
+
+
 def _plot_candles(df: pd.DataFrame, title: str, output: Path, figsize=(16, 8), mav=(20, 50)) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     if len(df) < 2:
         raise ValueError(f"Not enough rows for chart {title}")
 
     plot_df = df[["Open", "High", "Low", "Close", "Volume"]]
+    latest_close = float(plot_df["Close"].iloc[-1])
+    latest_ts = plot_df.index[-1]
+    title_with_price = f"{title} | last close: {_format_price(latest_close)} @ {latest_ts.strftime('%Y-%m-%d %H:%M UTC')}"
+
     kwargs = {
         "type": "candle",
         "volume": True,
         "style": "charles",
-        "title": title,
+        "title": title_with_price,
         "figsize": figsize,
         "tight_layout": True,
         "savefig": {"fname": str(output), "dpi": 150, "bbox_inches": "tight"},
         "warn_too_much_data": 5000,
+        # Draw a current-price reference line. The exact price is also written in the title.
+        "hlines": {"hlines": [latest_close], "linestyle": "--", "linewidths": 0.8},
     }
     # mplfinance rejects mav=None. Add mav only when every MA period fits into the chart.
     if mav is not None:
@@ -68,7 +85,7 @@ def _plot_candles(df: pd.DataFrame, title: str, output: Path, figsize=(16, 8), m
 
 
 def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logger: logging.Logger) -> ChartJobResult:
-    """Build exactly the 5 ChatGPT scan charts used by v16.2.
+    """Build exactly the 5 ChatGPT scan charts used by v17_full.
 
     Kept as a public helper for compatibility, but the old multi-month chart logic was removed
     so every code path matches the new 30d scan format:
@@ -81,6 +98,8 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
         raise RuntimeError(f"No candle data in {candle_path}")
 
     latest_ts = df_1m.index.max()
+    available_days = len(df_1m) / 1440.0
+    window_label = f"requested 30d / available ~{available_days:.1f}d"
 
     def plot(df: pd.DataFrame, title: str, output: Path, figsize=(16, 8), mav=(20, 50)) -> None:
         if len(df) < 2:
@@ -90,13 +109,13 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
         chart_files.append(str(output.relative_to(out_root.parent)))
 
     df_1d = resample_ohlcv(df_1m, "1d")
-    plot(df_1d, f"{symbol} 1D — last 30 days", out_root / symbol / f"{symbol}_1D.png", figsize=(18, 9), mav=(7, 20))
+    plot(df_1d, f"{symbol} 1D — {window_label}", out_root / symbol / f"{symbol}_1D.png", figsize=(18, 9), mav=(7, 20))
 
     df_4h = resample_ohlcv(df_1m, "4h")
-    plot(df_4h, f"{symbol} 4H — last 30 days", out_root / symbol / f"{symbol}_4H.png", figsize=(18, 9), mav=(20, 50))
+    plot(df_4h, f"{symbol} 4H — {window_label}", out_root / symbol / f"{symbol}_4H.png", figsize=(18, 9), mav=(20, 50))
 
     df_1h = resample_ohlcv(df_1m, "1h")
-    plot(df_1h, f"{symbol} 1H — last 30 days", out_root / symbol / f"{symbol}_1H.png", figsize=(18, 9), mav=(20, 50, 200))
+    plot(df_1h, f"{symbol} 1H — {window_label}", out_root / symbol / f"{symbol}_1H.png", figsize=(18, 9), mav=(20, 50, 200))
 
     df_15m = resample_ohlcv(df_1m, "15min")
     recent_15m = df_15m[df_15m.index >= latest_ts - pd.Timedelta(days=7)]

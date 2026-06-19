@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-APP_VERSION = "v16.5-chatgpt-scan-30d-exact-symbols-checked"
+APP_VERSION = "v17_full"
 
 
 @dataclass(frozen=True)

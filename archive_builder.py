@@ -10,7 +10,7 @@ from typing import Callable, Awaitable
 import pandas as pd
 
 from charts import load_ohlcv, resample_ohlcv, _plot_candles
-from config import SYMBOL_CANDIDATES, ScanPreset, Settings
+from config import ScanPreset, Settings
 from file_utils import (
     dir_size_bytes,
     file_sha256,
@@ -28,11 +28,11 @@ ProgressCallback = Callable[[str], Awaitable[None]]
 
 
 ASSET_LABELS = {
-    "gold": "Gold",
+    "gold": "Gold / XAU",
     "btc": "BTC",
     "eth": "ETH",
-    "silver": "Silver",
-    "oil": "Oil",
+    "silver": "Silver / XAG",
+    "oil": "Oil / WTI",
 }
 
 
@@ -55,18 +55,18 @@ def _asset_label_for_preset(preset: ScanPreset) -> str:
     if preset.key in ASSET_LABELS:
         return ASSET_LABELS[preset.key]
     if len(preset.symbols) == 1:
-        key = _asset_key_for_symbol(preset.symbols[0])
-        if key:
-            return ASSET_LABELS[key]
-        return preset.symbols[0]
+        # Custom scans should keep their own symbol label. Do not call XAUT "Gold" or
+        # UKOIL "Oil" unless the user used the exact main preset/alias.
+        symbol = preset.symbols[0].upper().replace("-", "_")
+        if symbol.endswith("_USDT"):
+            return symbol[:-5]
+        return symbol
     return preset.title
 
 
 def _exact_candidates_for_symbol(symbol: str) -> list[str]:
-    key = _asset_key_for_symbol(symbol)
-    if key and key in SYMBOL_CANDIDATES:
-        # Exact-only: do not substitute XAU with XAUT or WTI with Brent.
-        return list(dict.fromkeys(SYMBOL_CANDIDATES[key]))
+    # Exact-only: verify exactly the requested symbol. Do not map custom XAUT to XAU,
+    # UKOIL to USOIL, or any other similarly named instrument with a different price.
     return [symbol]
 
 
@@ -94,74 +94,219 @@ class PercentReporter:
             await _notify(self.cb, f"{self.prefix}: {bucket}% — {message}")
 
 
-def _chatgpt_task_text(preset: ScanPreset, created_msk: str) -> str:
-    assets = ", ".join(preset.symbols)
-    asset_label = _asset_label_for_preset(preset)
+def _setup_format_text(preset: ScanPreset) -> str:
+    """Human-readable strict output template stored inside every scan archive."""
     if len(preset.symbols) == 1:
-        return f"""TASK:
-Analyze this MEXC Futures scan archive using Elite 5 Rejection / Rostislav-style.
+        asset_label = _asset_label_for_preset(preset)
+        return f"""SETUP_FORMAT.txt
+Use this exact structure when answering from this archive.
+Answer in Russian only. No extra comments before or after the setup. Do not add an "Актив:" line.
 
-Archive created: {created_msk} UTC+3/MSK
-Assets: {assets}
-Data: 1m OHLC for the last 30 days, plus 5 charts per asset: 1D, 4H, 1H, 15m, 1m.
+If there is NO clean setup, answer exactly one line:
+wait, сейчас лучше не входить, подожди и пришли новый архив.
 
-Return ONLY the ready setup, no extra explanation.
+If there IS a setup, answer exactly like this:
 
-Required short format:
 Setup {asset_label}:
-Маркет - <use only if A+; otherwise пропускаем, нет сетапа A+>
-Лимит <price> <long/short>
+
+Маркет - <пропускаем, нет A+ сетапа / LONG MARKET price / SHORT MARKET price>
+
+Лимит:
+<BUY LIMIT 1: price / SELL LIMIT 1: price / WAIT>
+<BUY LIMIT 2: price / SELL LIMIT 2: price / WAIT>
+
 TP1: <price>
 TP2: <price>
 TP3: <price>
-SL: <price>
-Убрать лимит: <clear cancellation rule>
 
-Rules:
-- Do not chase price.
-- No market after a strong move unless the setup is A+.
-- Prefer SHORT only from pullback if 1H/4H are weak.
-- LONG is usually SOFT only after a strong dump into a lower zone with reaction.
-- If no clean setup exists, answer exactly:
-wait, сейчас лучше не входить, подожди и пришли новый архив.
+SL: <price>
+
+Сопровождение:
+После TP1 <закрыть часть и перенести SL в entry / сильно подтянуть SL>.
+После TP2 <SL строго в entry / закрыть ещё часть>.
+TP3 <закрывает остаток / дальше не держать>.
+
+Убрать лимит:
+<условие, когда снять лимитки, например: если цена ушла к TP1/TP2 без входа — не догонять>
+<условие, когда идея сломана, например: если пробой и закрепление выше/ниже SL-зоны>
+
+Причина:
+<1–3 коротких предложения по 1D/4H/1H/15m/1m: почему LONG/SHORT/WAIT и почему вход именно от этой зоны>
+
+Rules for the format:
+- If market entry is not A+, write: Маркет - пропускаем, нет A+ сетапа.
+- Use LIMIT when entry should be only from pullback/reaction zone.
+- Use WAIT if price is late, already near TP, no zone, no clear SL, or timeframes conflict.
+- Do not write long theory. Do not add warnings unrelated to the setup.
 """.strip()
 
+    return """SETUP_FORMAT.txt
+Use this exact structure when answering from this multi-asset archive.
+Answer in Russian only. No extra comments before or after the setups. Do not add "Актив:" lines.
+
+If there is NO clean setup on all assets, answer exactly one line:
+wait, сейчас лучше не входить, подожди и пришли новый архив.
+
+If at least one asset has a setup, return all 5 blocks in this order.
+For assets without a setup, write WAIT inside that asset block.
+
+Setup Gold / XAU:
+Маркет - <пропускаем, нет A+ сетапа / LONG MARKET price / SHORT MARKET price>
+Лимит:
+<BUY LIMIT 1: price / SELL LIMIT 1: price / WAIT>
+<BUY LIMIT 2: price / SELL LIMIT 2: price / WAIT>
+TP1: <price or WAIT>
+TP2: <price or WAIT>
+TP3: <price or WAIT>
+SL: <price or WAIT>
+Сопровождение: <short management after TP1/TP2/TP3 or WAIT>
+Убрать лимит: <when to remove limits / when idea is broken>
+Причина: <short reason by 1D/4H/1H/15m/1m>
+
+Setup BTC:
+Маркет - <...>
+Лимит:
+<...>
+<...>
+TP1: <...>
+TP2: <...>
+TP3: <...>
+SL: <...>
+Сопровождение: <...>
+Убрать лимит: <...>
+Причина: <...>
+
+Setup ETH:
+Маркет - <...>
+Лимит:
+<...>
+<...>
+TP1: <...>
+TP2: <...>
+TP3: <...>
+SL: <...>
+Сопровождение: <...>
+Убрать лимит: <...>
+Причина: <...>
+
+Setup Silver / XAG:
+Маркет - <...>
+Лимит:
+<...>
+<...>
+TP1: <...>
+TP2: <...>
+TP3: <...>
+SL: <...>
+Сопровождение: <...>
+Убрать лимит: <...>
+Причина: <...>
+
+Setup Oil / WTI:
+Маркет - <...>
+Лимит:
+<...>
+<...>
+TP1: <...>
+TP2: <...>
+TP3: <...>
+SL: <...>
+Сопровождение: <...>
+Убрать лимит: <...>
+Причина: <...>
+
+Rules for the format:
+- If market entry is not A+, write: Маркет - пропускаем, нет A+ сетапа.
+- Use LIMIT when entry should be only from pullback/reaction zone.
+- Use WAIT if price is late, already near TP, no zone, no clear SL, or timeframes conflict.
+- Do not write long theory. Do not add warnings unrelated to the setup.
+""".strip()
+
+
+def _chatgpt_task_text(preset: ScanPreset, created_msk: str) -> str:
+    assets = ", ".join(preset.symbols)
+    setup_format = _setup_format_text(preset)
+
+    strategy_block = """STRATEGY: Elite 5 Rejection / Rostislav-style
+
+ROLE:
+You are a manual/semi-auto trading assistant. Analyze only the archive data/charts and return a concrete setup: LONG / SHORT / WAIT, entry zone, limit orders, SL, TP1/TP2/TP3, trade class, management and short reason.
+Do not give long theory. Do not discuss general market opinions. Answer only with the setup.
+
+TRADING UNIVERSE:
+Main priority assets: BTC, ETH, XAU/GOLD, XAG/SILVER, OIL.
+Main priority: XAU/GOLD.
+If this archive was created from a custom text symbol, analyze that requested symbol too, but keep the same strict rules and reject weak/late setups.
+Use exact MEXC symbols from manifest only. Do not replace XAU_USDT with XAUT_USDT. Do not replace USOIL_USDT/WTI with UKOIL_USDT/Brent. Do not replace a custom symbol with another instrument.
+
+TIMEFRAMES:
+1D = общий фон.
+4H = главный старший контекст.
+1H = структура движения.
+15m = зона входа.
+1m = точная реакция / микровход.
+If some context is incomplete or manifest shows partial history, use available data and do not invent missing candles.
+
+CORE PRINCIPLE:
+The strategy is not based on smart money, random patterns or chasing pumps. Use trend, levels, structure, impulse, pullback, reaction and entry from a zone.
+Price makes a strong move, then comes to an important zone. Do not chase price. Wait for pullback or reaction. Enter from the zone. SL goes behind the local invalidation high/low. TPs are partial.
+
+SHORT MODEL:
+Look for SHORT when 1H/4H are weak, price has already fallen or bounced after a fall, and price pulls back upward into resistance / local high / broken zone / MA / level.
+Entry only from pullback. Do not short market at the bottom. SL above local high. TP levels below by nearest zones.
+Rule: want SHORT -> wait for pullback upward. If price already dropped to TP zone without entry, skip.
+
+LONG MODEL:
+Look for LONG only when there was a strong dump, price reached a lower local zone, and 1m/15m shows upward reaction.
+This is usually a SOFT quick bounce, not a global reversal. Targets must be close. After TP1 reduce risk or move SL to entry.
+
+TRADE CLASSES:
+A+ = higher timeframes agree, clean zone, strong impulse, clear invalidation, entry is not late. Allocation 20% total balance, isolated 10x.
+A = good clear setup, but not perfect. Allocation 10% total balance, isolated 10x.
+SOFT = cautious quick scalp, often countertrend, close targets, only from a good zone. Allocation up to 10% if entry is high-quality.
+REJECT/WAIT = bad setup, late price, no zone, no clear SL, conflicting timeframes, or price already reached targets.
+
+POSITION MANAGEMENT:
+TP1 = close part of position.
+TP2 = close part of position.
+TP3 = close remainder.
+For SOFT: after TP1 move SL to entry or strongly tighten it.
+For A/A+: after TP2 SL must be at entry.
+If price returns to entry after TP1/TP2, exit remainder without loss.
+
+BANS:
+Do not chase price.
+Do not enter market after a strong move unless clearly A+.
+Do not give entry if price already reached TP1/TP2.
+Do not place a limit too close to current price when price is already low for SHORT or already high for LONG.
+Do not average against position.
+Do not hold SOFT as a large trend trade.
+Do not open any setup without clear SL.
+If setup is unclear, answer WAIT/no trade.
+
+OUTPUT RULES:
+Answer in Russian only.
+Return ONLY the final setup, no extra explanation.
+If no clean setup exists on the archive, answer exactly:
+wait, сейчас лучше не входить, подожди и пришли новый архив."""
+
+    title = "multi-asset scan archive" if len(preset.symbols) > 1 else "scan archive"
+    charts_desc = "5 charts per asset: 1D, 4H, 1H, 15m, 1m" if len(preset.symbols) > 1 else "5 charts: 1D, 4H, 1H, 15m, 1m"
+    symbols_label = "Requested exact symbols" if len(preset.symbols) > 1 else "Requested exact symbol"
+
     return f"""TASK:
-Analyze this MEXC Futures multi-asset scan archive using Elite 5 Rejection / Rostislav-style.
+Analyze this MEXC Futures {title} using the strategy and output template below.
 
 Archive created: {created_msk} UTC+3/MSK
-Assets: {assets}
-Data: 1m OHLC for the last 30 days, plus 5 charts per asset: 1D, 4H, 1H, 15m, 1m.
+{symbols_label}: {assets}
+Data: 1m OHLC requested for last 30 days, plus {charts_desc}.
 
-Return ONLY 5 ready setups, no extra explanation:
-Setup Gold:
-...
-Setup BTC:
-...
-Setup ETH:
-...
-Setup Silver:
-...
-Setup Oil:
-...
+{strategy_block}
 
-Required short format for each asset:
-Маркет - <use only if A+; otherwise пропускаем, нет сетапа A+>
-Лимит <price> <long/short>
-TP1: <price>
-TP2: <price>
-TP3: <price>
-SL: <price>
-Убрать лимит: <clear cancellation rule>
+STRICT SETUP WRITING FORMAT:
+The answer must follow the template below. The same template is also stored as setup_format.txt in the archive root.
 
-Rules:
-- Do not chase price.
-- No market after a strong move unless the setup is A+.
-- Prefer SHORT only from pullback if 1H/4H are weak.
-- LONG is usually SOFT only after a strong dump into a lower zone with reaction.
-- If one asset has no clean setup, write WAIT for that asset.
-- If no clean setup exists on all 5 assets, answer exactly:
-wait, сейчас лучше не входить, подожди и пришли новый архив.
+{setup_format}
 """.strip()
 
 
@@ -180,6 +325,8 @@ async def _plot_scan_charts_for_symbol(
         raise RuntimeError(f"No candle data in {candle_path}")
 
     latest_ts = df_1m.index.max()
+    available_days = len(df_1m) / 1440.0
+    window_label = f"requested 30d / available ~{available_days:.1f}d"
 
     async def plot(df: pd.DataFrame, title: str, output: Path, figsize=(16, 8), mav=(20, 50)) -> None:
         if len(df) < 2:
@@ -193,13 +340,13 @@ async def _plot_scan_charts_for_symbol(
 
     # Exactly 5 charts per asset, focused on current manual/semi-auto setup analysis.
     df_1d = resample_ohlcv(df_1m, "1d")
-    await plot(df_1d, f"{symbol} 1D — last 30 days", charts_out / symbol / f"{symbol}_1D.png", figsize=(18, 9), mav=(7, 20))
+    await plot(df_1d, f"{symbol} 1D — {window_label}", charts_out / symbol / f"{symbol}_1D.png", figsize=(18, 9), mav=(7, 20))
 
     df_4h = resample_ohlcv(df_1m, "4h")
-    await plot(df_4h, f"{symbol} 4H — last 30 days", charts_out / symbol / f"{symbol}_4H.png", figsize=(18, 9), mav=(20, 50))
+    await plot(df_4h, f"{symbol} 4H — {window_label}", charts_out / symbol / f"{symbol}_4H.png", figsize=(18, 9), mav=(20, 50))
 
     df_1h = resample_ohlcv(df_1m, "1h")
-    await plot(df_1h, f"{symbol} 1H — last 30 days", charts_out / symbol / f"{symbol}_1H.png", figsize=(18, 9), mav=(20, 50, 200))
+    await plot(df_1h, f"{symbol} 1H — {window_label}", charts_out / symbol / f"{symbol}_1H.png", figsize=(18, 9), mav=(20, 50, 200))
 
     df_15m = resample_ohlcv(df_1m, "15min")
     recent_15m = df_15m[df_15m.index >= latest_ts - pd.Timedelta(days=7)]
@@ -364,7 +511,9 @@ async def build_scan_archive(
 
         await reporter.report(95, "пишу manifest/task")
         task_text = _chatgpt_task_text(preset, created_msk)
+        setup_format_text = _setup_format_text(preset)
         (build_dir / "task.txt").write_text(task_text + "\n", encoding="utf-8")
+        (build_dir / "setup_format.txt").write_text(setup_format_text + "\n", encoding="utf-8")
 
         manifest = {
             "archive_type": "chatgpt_scan_30d_mexc_futures",
@@ -408,7 +557,8 @@ async def build_scan_archive(
                 "rate_limit_handling": "On HTTP/app-level too-frequent/rate-limit errors, increase request pause and retry.",
                 "symbol_policy": "Exact symbols only. No automatic fallback/substitution.",
             },
-            "answer_rule_for_chatgpt": "Return only ready setup. If no setup: wait, сейчас лучше не входить, подожди и пришли новый архив.",
+            "instruction_files": ["task.txt", "setup_format.txt"],
+            "answer_rule_for_chatgpt": "Return only ready setup using setup_format.txt. If no setup: wait, сейчас лучше не входить, подожди и пришли новый архив.",
         }
         write_json(build_dir / "manifest.json", manifest)
         write_json(meta_out / "exchange_info.json", exchange_info)
