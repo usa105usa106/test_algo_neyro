@@ -9,7 +9,7 @@ from typing import Callable, Awaitable
 
 import pandas as pd
 
-from charts import load_ohlcv, resample_ohlcv, _plot_candles
+from charts import create_montage_for_symbol, load_ohlcv, resample_ohlcv, _plot_candles
 from config import ScanPreset, Settings
 from file_utils import (
     dir_size_bytes,
@@ -397,6 +397,296 @@ The answer must follow the template below. The same template is also stored as s
 """.strip()
 
 
+def _downloaded_df_to_ohlcv_montage(df: pd.DataFrame) -> pd.DataFrame:
+    if "datetime_utc" in df.columns:
+        dt = pd.to_datetime(df["datetime_utc"], utc=True)
+    else:
+        dt = pd.to_datetime(df["open_time"], unit="ms", utc=True)
+    out = df.copy()
+    out.index = dt
+    out = out[["open", "high", "low", "close", "volume", "quote_volume"]].sort_index()
+    out.columns = ["Open", "High", "Low", "Close", "Volume", "QuoteVolume"]
+    return out
+
+
+def _montage_task_text(preset: ScanPreset, created_msk: str) -> str:
+    assets = ", ".join(preset.symbols)
+    return f"""TASK:
+Analyze this archive in MONTAGE mode.
+
+Archive created: {created_msk} UTC+3/MSK
+Requested exact symbols: {assets}
+Archive contains montage charts only. Each montage is one image per asset with this layout:
+- top-left: 1D
+- top-right: 4H
+- middle-left: 1H
+- middle-right: 15m
+- bottom-left: 1m
+- bottom-right: info/task panel
+
+Every chart already includes:
+- candles
+- price on the right
+- last high/low
+- MA7 / MA25 / MA99
+- MACD
+- exact symbol / asset name
+- current time UTC+3 / MSK
+
+MONTAGE MODE LOGIC:
+- Montage mode is a SWING mode.
+- For every asset you must always build TWO alternative setups:
+  1) Swing LONG
+  2) Swing SHORT
+- Do not choose only one direction.
+- Give both LONG and SHORT plans even if one side is weaker.
+- If a side is completely invalid, write WAIT for that side.
+- Montage mode classes are ONLY: A+, A, WAIT.
+- Do NOT use SOFT in montage mode. SOFT remains only for standard non-montage scan mode.
+- Prefer limit entries from zones, not market chasing.
+- Use 1D / 4H / 1H for context, 15m / 1m for entry refinement.
+- Focus on trend, structure, levels, pullback zones, invalidation and realistic take-profits.
+
+RANKING RULE:
+If the archive contains more than one montage / asset:
+- rank all assets as 1, 2, 3, ... from best to worst
+- 1 = best expected setup quality
+- last = weakest expected setup quality
+- inside each ranked asset block, still give both Swing LONG and Swing SHORT setups
+
+IMPORTANT STYLE RULES:
+- Answer in Russian only.
+- Return only final setups.
+- No intro.
+- No outro.
+- No long analysis paragraphs.
+- No chain-of-thought.
+- Output must look like a clean ready-made setup note.
+- Short reason is allowed.
+- Keep the wording close to this style.
+
+REQUIRED OUTPUT STYLE:
+For each asset, first show the asset line and current price line.
+Then explicitly state whether price should be entered from market or not.
+Then provide:
+- Swing LONG <asset>
+- Swing SHORT <asset>
+- final line: Лучший план: ... Сейчас — WAIT / LONG LIMIT / SHORT LIMIT.
+
+USE THIS EXACT STRUCTURE TEMPLATE:
+
+If there are multiple assets:
+1. <SYMBOL> — лучший выбор / сильный / средний / слабый
+<symbol> текущая: <price>
+С рынка не входить. <short note>
+
+Swing LONG <BASE>
+Вердикт: LONG LIMIT / WAIT
+Класс: A+ / A / WAIT
+
+Лимитки:
+1. <zone 1>
+2. <zone 2>
+
+Стоп: <price>
+TP1: <price or zone> — закрыть 33%, SL в б/у
+TP2: <price or zone> — закрыть 33%, SL в б/у
+TP3: <price or zone> — закрыть остаток
+
+Отмена идеи: <short invalidation>
+Причина: <short reason>
+
+Swing SHORT <BASE>
+Вердикт: SHORT LIMIT / WAIT
+Класс: A+ / A / WAIT
+
+Лимитки:
+1. <zone 1>
+2. <zone 2>
+
+Стоп: <price>
+TP1: <price or zone> — закрыть 33%, SL в б/у
+TP2: <price or zone> — закрыть 33%, SL в б/у
+TP3: <price or zone> — закрыть остаток
+
+Отмена идеи: <short invalidation>
+Причина: <short reason>
+
+Лучший план: ждать либо LONG от <zone>, либо SHORT от <zone>. Сейчас — WAIT / LONG LIMIT / SHORT LIMIT.
+
+If there is only one asset, use the same structure but without ranking words.
+
+FORMAT NOTES:
+- Use exactly the labels: Вердикт, Класс, Лимитки, Стоп, TP1, TP2, TP3, Отмена идеи, Причина, Лучший план.
+- For limit zones, ranges like 1722–1716 are allowed.
+- For TP levels, both single prices and zones are allowed.
+- If a side is WAIT, you may still provide the likely trigger zone, but the verdict and class must say WAIT.
+- The final answer must be practical and ready to trade from the written levels.
+- Do not mention montage instructions in the final answer.
+""".strip()
+
+
+async def _build_scan_archive_montage(
+    settings: Settings,
+    logger: logging.Logger,
+    secret_store: SecretStore,
+    preset: ScanPreset,
+    progress_cb: ProgressCallback | None = None,
+) -> Path:
+    utc_build_stamp = utc_stamp()
+    scan_stamp = moscow_scan_stamp()
+    created_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+
+    build_dir = settings.work_dir / f"scan_build_{utc_build_stamp}" / f"chatgpt_scan_{preset.key}"
+    safe_rmtree(build_dir)
+    charts_out = build_dir / "charts"
+    meta_out = build_dir / "meta"
+    charts_out.mkdir(parents=True, exist_ok=True)
+    meta_out.mkdir(parents=True, exist_ok=True)
+
+    reporter = PercentReporter(f"Scan {preset.title}", progress_cb)
+    logger.info("Starting ChatGPT montage scan preset=%s symbols=%s", preset.key, preset.symbols)
+    await reporter.report(0, f"старт montage. MEXC Futures, 1m за {settings.days_back} дней, symbols={preset.symbols}", force=True)
+
+    api_mask = secret_store.load_mexc_api_mask()
+    client = MexcSpotClient(settings.mexc_base_url, logger, settings.mexc_market_type)
+    try:
+        await reporter.report(5, f"проверяю MEXC endpoint {settings.mexc_base_url}")
+        ping_ok = await client.ping()
+        server_time = await client.server_time()
+        interval_ms = INTERVAL_MS.get(settings.base_interval, 60_000)
+        window = DownloadWindow.last_days_from_end_ms(settings.days_back, int(server_time["serverTime"]), interval_ms)
+        resolved_symbols, symbol_resolution = await _resolve_scan_symbols(client, preset, logger)
+        exchange_info = await client.exchange_info(resolved_symbols)
+        await reporter.report(10, f"MEXC доступен, начинаю сбор свечей в память: {resolved_symbols}")
+
+        row_counts: dict[str, int] = {}
+        chart_files: list[str] = []
+        warnings: list[str] = []
+        symbols_count = max(1, len(resolved_symbols))
+        download_span = 62.0
+        charts_span = 20.0
+        expected_charts = max(1, len(resolved_symbols))
+        chart_done = 0
+
+        async def chart_done_cb(rel_path: str) -> None:
+            nonlocal chart_done
+            chart_done += 1
+            pct = 74 + min(charts_span, chart_done / expected_charts * charts_span)
+            await reporter.report(pct, f"montage {chart_done}/{expected_charts}; последний: {rel_path}")
+
+        for idx, symbol in enumerate(resolved_symbols):
+            symbol_base = 10.0 + idx * (download_span / symbols_count)
+            symbol_span = download_span / symbols_count
+            await reporter.report(symbol_base, f"скачиваю {symbol} {settings.base_interval} за {settings.days_back} дней")
+
+            async def symbol_progress(symbol_pct: float, rows: int, expected: int, symbol_name: str = symbol) -> None:
+                absolute_pct = symbol_base + symbol_span * (symbol_pct / 100.0)
+                await reporter.report(absolute_pct, f"{symbol_name}: {rows:,}/{expected:,} свечей")
+
+            df = await client.download_klines_dataframe(symbol, settings.base_interval, window, progress_cb=symbol_progress)
+            if df.empty:
+                raise RuntimeError(f"No data downloaded for {symbol}")
+
+            expected_rows = max(1, int((window.end_ms - window.start_ms) // interval_ms))
+            coverage = len(df) / expected_rows
+            actual_days_by_rows = len(df) * interval_ms / (24 * 60 * 60 * 1000)
+            if coverage < settings.min_coverage_ratio:
+                if actual_days_by_rows >= settings.min_effective_days:
+                    msg = (
+                        f"{symbol}: доступна неполная история в окне {settings.days_back}d: "
+                        f"{len(df):,}/{expected_rows:,} свечей ({coverage:.1%}), "
+                        f"примерно {actual_days_by_rows:.1f} дней. Продолжаю сбор: данных достаточно для montage."
+                    )
+                    warnings.append(msg)
+                    logger.warning(msg)
+                    await reporter.report(symbol_base + symbol_span * 0.98, msg)
+                else:
+                    raise RuntimeError(
+                        f"{symbol}: скачано слишком мало свечей: {len(df):,}/{expected_rows:,} ({coverage:.1%}), "
+                        f"примерно {actual_days_by_rows:.1f} дней. Минимум для scan: {settings.min_effective_days:g} дней. "
+                        f"Проверь symbol на MEXC Futures или увеличь паузу/повторы."
+                    )
+
+            row_counts[symbol] = len(df)
+            await reporter.report(74, f"строю montage для {symbol}")
+            df_ohlcv = _downloaded_df_to_ohlcv_montage(df)
+            task_hint = "Swing LONG + Swing SHORT, rank assets 1..N, classes A+/A/WAIT only."
+            rel = await asyncio.to_thread(create_montage_for_symbol, symbol, df_ohlcv, charts_out, created_msk, task_hint, logger)
+            chart_files.append(rel)
+            await chart_done_cb(rel)
+
+        await reporter.report(95, "пишу manifest/task")
+        task_text = _montage_task_text(preset, created_msk)
+        (build_dir / "task.txt").write_text(task_text + "\n", encoding="utf-8")
+
+        manifest = {
+            "archive_type": "chatgpt_scan_30d_mexc_futures_montage",
+            "collector_version": settings.app_version,
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "created_at_utc_plus_3_msk": created_msk,
+            "telegram_archive_stamp_utc_plus_3": scan_stamp,
+            "exchange": "MEXC_FUTURES_PUBLIC",
+            "base_url": settings.mexc_base_url,
+            "market_type": settings.mexc_market_type,
+            "preset_key": preset.key,
+            "preset_title": preset.title,
+            "requested_symbols": preset.symbols,
+            "symbols": resolved_symbols,
+            "symbol_resolution": symbol_resolution,
+            "symbol_policy": "exact_only_no_fallback: trade the exact listed symbol only",
+            "base_interval": settings.base_interval,
+            "days_back": settings.days_back,
+            "download_window": window.as_dict(),
+            "min_coverage_ratio": settings.min_coverage_ratio,
+            "min_effective_days": settings.min_effective_days,
+            "ping_ok": ping_ok,
+            "server_time": server_time,
+            "api_key_saved_mask": api_mask,
+            "candle_files": {},
+            "row_counts": row_counts,
+            "chart_files_count": len(chart_files),
+            "chart_files": chart_files,
+            "chart_set": {"montage": "one JPG per asset: 1D, 4H, 1H, 15m, 1m + info/task panel"},
+            "warnings": warnings,
+            "request_policy": {
+                "endpoint": "/api/v1/contract/kline/{symbol}",
+                "base_url": settings.mexc_base_url,
+                "chunk_limit_1m_candles": 2000,
+                "rate_limit_handling": "On HTTP/app-level too-frequent/rate-limit errors, increase request pause and retry.",
+                "symbol_policy": "Exact symbols only. No automatic fallback/substitution.",
+            },
+            "instruction_files": ["task.txt"],
+            "answer_rule_for_chatgpt": "Return ranked swing LONG and SHORT setups using task.txt; classes A+/A/WAIT only.",
+            "montage_mode": True,
+            "storage_policy": "No parquet/candles are written into montage archives; downloaded candles are used in memory only to render montage charts.",
+        }
+        write_json(build_dir / "manifest.json", manifest)
+        write_json(meta_out / "exchange_info.json", exchange_info)
+        write_json(meta_out / "api_status.json", {
+            "mexc_futures_public_ping_ok": ping_ok,
+            "mexc_server_time": server_time,
+            "api_key_saved_mask": api_mask,
+            "note": "Market data uses MEXC public futures endpoints. No place_order/cancel_order/trading endpoints exist in this bot.",
+        })
+
+        await reporter.report(98, "упаковываю zip")
+        zip_path = settings.exports_dir / f"chatgpt_scan-{preset.key}-{scan_stamp}.zip"
+        zip_directory(build_dir, zip_path)
+        write_json(settings.exports_dir / f"chatgpt_scan-{preset.key}-{scan_stamp}.sha256.json", {
+            "file": zip_path.name,
+            "sha256": file_sha256(zip_path),
+            "size_bytes": zip_path.stat().st_size,
+            "size_human": human_bytes(zip_path.stat().st_size),
+            "created_at_utc_plus_3_msk": created_msk,
+        })
+        logger.info("Montage scan archive ready: %s size=%s", zip_path, human_bytes(zip_path.stat().st_size))
+        await reporter.report(100, f"архив montage готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}, montage={len(chart_files)}", force=True)
+        return zip_path
+    finally:
+        await client.close()
+
+
 async def _plot_scan_charts_for_symbol(
     symbol: str,
     candle_path: Path,
@@ -495,7 +785,11 @@ async def build_scan_archive(
     secret_store: SecretStore,
     preset: ScanPreset,
     progress_cb: ProgressCallback | None = None,
+    montage_mode: bool = False,
 ) -> Path:
+    if montage_mode:
+        return await _build_scan_archive_montage(settings, logger, secret_store, preset, progress_cb)
+
     utc_build_stamp = utc_stamp()
     scan_stamp = moscow_scan_stamp()
     created_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")

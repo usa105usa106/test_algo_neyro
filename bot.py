@@ -34,6 +34,7 @@ BTN_LOG_FULL = "log_full"
 BTN_RESET = "reset"
 BTN_PING = "ping"
 BTN_SYMBOLS_CHECK = "symbols_check"
+BTN_MONTAGE = "montage_toggle"
 BTN_SCAN_PREFIX = "scan:"
 
 
@@ -48,6 +49,7 @@ class BotRuntime:
         self.last_export: Path | None = None
         self.started_at_monotonic = time.monotonic()
         self.started_at_utc = datetime.now(timezone.utc)
+        self.montage_enabled = False
 
     def is_admin(self, update: Update) -> bool:
         if self.settings.admin_telegram_id is None:
@@ -67,6 +69,7 @@ class BotRuntime:
         self.active_task_name = None
         self.awaiting_api_step.clear()
         self.secret_store.clear()
+        self.montage_enabled = False
         safe_rmtree(self.settings.work_dir)
 
 
@@ -142,7 +145,8 @@ def _custom_preset_from_text(text: str) -> ScanPreset | None:
     title = f"{base} 30d"
     return ScanPreset(key, title, [symbol])
 
-def main_menu() -> InlineKeyboardMarkup:
+def main_menu(runtime: BotRuntime | None = None) -> InlineKeyboardMarkup:
+    montage_label = f"🧩 Montage: {'ON' if runtime and runtime.montage_enabled else 'OFF'}"
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📊 Gold 30d", callback_data=f"{BTN_SCAN_PREFIX}gold"),
@@ -156,7 +160,10 @@ def main_menu() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🛢 Oil 30d", callback_data=f"{BTN_SCAN_PREFIX}oil"),
             InlineKeyboardButton("🔥 Multi 5 assets 30d", callback_data=f"{BTN_SCAN_PREFIX}multi"),
         ],
-        [InlineKeyboardButton("⚙️ Symbols check", callback_data=BTN_SYMBOLS_CHECK)],
+        [
+            InlineKeyboardButton(montage_label, callback_data=BTN_MONTAGE),
+            InlineKeyboardButton("⚙️ Symbols check", callback_data=BTN_SYMBOLS_CHECK),
+        ],
         [
             InlineKeyboardButton("/api", callback_data=BTN_API),
             InlineKeyboardButton("/log_full", callback_data=BTN_LOG_FULL),
@@ -165,12 +172,11 @@ def main_menu() -> InlineKeyboardMarkup:
         ],
     ])
 
-
-async def reply_with_menu(update: Update, text: str) -> None:
+async def reply_with_menu(update: Update, text: str, runtime: BotRuntime) -> None:
     if update.callback_query and update.callback_query.message:
-        await update.callback_query.message.reply_text(text, reply_markup=main_menu())
+        await update.callback_query.message.reply_text(text, reply_markup=main_menu(runtime))
     elif update.effective_message:
-        await update.effective_message.reply_text(text, reply_markup=main_menu())
+        await update.effective_message.reply_text(text, reply_markup=main_menu(runtime))
 
 
 async def guarded(update: Update, runtime: BotRuntime) -> bool:
@@ -193,12 +199,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_with_menu(
         update,
         f"ChatGPT Scan Bot 30d — {runtime.settings.app_version}\n\n"
-        "Нажми кнопку актива: бот скачает MEXC Futures 1m за 30 дней, построит 5 графиков на актив "
-        "(1D/4H/1H/15m/1m), положит task.txt и отправит архив вида chatgpt_scan-...-HHMM_DDMM.zip по UTC+3.\n\n"
+        "Стандартный режим: как v17 — 5 графиков + task/setup_format + parquet.\n"
+        "Montage OFF по умолчанию. Montage ON: один montage-график на актив без parquet + swing task LONG/SHORT.\n\n"
         "Старые тяжёлые research-кнопки убраны.\n"
         "Служебные: /api, /log_full, /ping, /reset.\n\n"
         f"{api_text}\n"
+        f"Montage: {'ON' if runtime.montage_enabled else 'OFF'}\n"
         "В коде нет place_order/cancel_order, бот не открывает сделки.",
+        runtime,
     )
 
 
@@ -215,6 +223,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"- base_url: {runtime.settings.mexc_base_url}",
         f"- days_back: {runtime.settings.days_back}",
         f"- base_interval: {runtime.settings.base_interval}",
+        f"- montage_mode: {'ON' if runtime.montage_enabled else 'OFF'}",
         f"- data_root: {runtime.settings.data_root}",
         f"- API: {api_mask['api_key'] if api_mask else 'not set'}",
         "- last exports:",
@@ -224,7 +233,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             lines.append(f"  • {p.name} — {human_bytes(p.stat().st_size)}")
     else:
         lines.append("  • нет")
-    await reply_with_menu(update, "\n".join(lines))
+    await reply_with_menu(update, "\n".join(lines), runtime)
 
 
 def _format_duration(seconds: float) -> str:
@@ -266,7 +275,7 @@ async def handle_ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         f"- process CPU: {process_cpu:.1f}%\n"
         f"- disk storage: {disk.percent:.1f}% used ({human_bytes(disk.used)} / {human_bytes(disk.total)})"
     )
-    await reply_with_menu(update, text)
+    await reply_with_menu(update, text, runtime)
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -277,11 +286,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer()
     data = query.data or ""
 
-    if data.startswith(BTN_SCAN_PREFIX):
+    if data == BTN_MONTAGE:
+        runtime.montage_enabled = not runtime.montage_enabled
+        await query.message.reply_text(f"Montage переключен: {'ON' if runtime.montage_enabled else 'OFF'}", reply_markup=main_menu(runtime))
+    elif data.startswith(BTN_SCAN_PREFIX):
         key = data.removeprefix(BTN_SCAN_PREFIX)
         preset = SCAN_PRESETS.get(key)
         if not preset:
-            await query.message.reply_text("Неизвестная scan-кнопка.", reply_markup=main_menu())
+            await query.message.reply_text("Неизвестная scan-кнопка.", reply_markup=main_menu(runtime))
             return
         await start_scan_job(update, context, preset)
     elif data == BTN_SYMBOLS_CHECK:
@@ -308,6 +320,7 @@ async def start_api_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "Для свечей ключ не нужен: используются public MEXC Futures endpoints.\n"
         "Ключ лучше read-only, без trade/withdraw permissions.\n"
         "Напиши /cancel, чтобы отменить.",
+        runtime,
     )
 
 
@@ -315,7 +328,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     runtime: BotRuntime = context.application.bot_data["runtime"]
     if update.effective_user:
         runtime.awaiting_api_step.pop(update.effective_user.id, None)
-    await reply_with_menu(update, "Ок, отменено.")
+    await reply_with_menu(update, "Ок, отменено.", runtime)
 
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -335,12 +348,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await reply_with_menu(
             update,
             "Выбери действие кнопкой, отправь /start, или напиши symbol для кастомного архива, например: xrp / sol / XRP_USDT.",
+            runtime,
         )
         return
 
     if text.lower() in {"/cancel", "cancel", "отмена"}:
         runtime.awaiting_api_step.pop(user.id, None)
-        await reply_with_menu(update, "Ок, отменено.")
+        await reply_with_menu(update, "Ок, отменено.", runtime)
         return
 
     if state["step"] == "api_key":
@@ -359,18 +373,19 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             update,
             f"API сохранён зашифрованно. Key: {mask['api_key']}\n"
             "Бот всё равно не умеет открывать сделки: торговых endpoints в коде нет.",
+            runtime,
         )
 
 
 async def start_scan_job(update: Update, context: ContextTypes.DEFAULT_TYPE, preset: ScanPreset) -> None:
     runtime: BotRuntime = context.application.bot_data["runtime"]
     if runtime.active_task and not runtime.active_task.done():
-        await reply_with_menu(update, f"Уже {runtime.active_summary()}. Дождись окончания или нажми /reset.")
+        await reply_with_menu(update, f"Уже {runtime.active_summary()}. Дождись окончания или нажми /reset.", runtime)
         return
     chat_id = update.effective_chat.id
     runtime.active_task_name = f"Scan {preset.title}"
     runtime.active_task = asyncio.create_task(build_scan_job(context, chat_id, preset))
-    await reply_with_menu(update, f"Scan {preset.title}: запущено. Собираю exact symbol, 1m за 30 дней и 5 графиков на актив.")
+    await reply_with_menu(update, f"Scan {preset.title}: запущено. Режим={'montage' if runtime.montage_enabled else 'standard/v17'}. Собираю exact symbol, 1m за 30 дней и графики.", runtime)
 
 
 async def build_scan_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int, preset: ScanPreset) -> None:
@@ -380,7 +395,7 @@ async def build_scan_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int, prese
             runtime.logger.info(msg)
             await context.bot.send_message(chat_id=chat_id, text=msg[:3900])
 
-        zip_path = await build_scan_archive(runtime.settings, runtime.logger, runtime.secret_store, preset, progress)
+        zip_path = await build_scan_archive(runtime.settings, runtime.logger, runtime.secret_store, preset, progress, montage_mode=runtime.montage_enabled)
         runtime.last_export = zip_path
         await send_archive_or_parts(context, chat_id, zip_path, runtime)
     except asyncio.CancelledError:
@@ -413,10 +428,10 @@ async def handle_symbols_check(update: Update, context: ContextTypes.DEFAULT_TYP
                 lines.append(f"- {asset}: {', '.join(found)}")
             else:
                 lines.append(f"- {asset}: НЕ НАЙДЕН exact symbol: {', '.join(candidates)}")
-        await reply_with_menu(update, "\n".join(lines))
+        await reply_with_menu(update, "\n".join(lines), runtime)
     except Exception as exc:  # noqa: BLE001
         runtime.logger.exception("Symbols check failed: %s", exc)
-        await reply_with_menu(update, f"Symbols check ошибка: {exc}")
+        await reply_with_menu(update, f"Symbols check ошибка: {exc}", runtime)
     finally:
         await client.close()
 
@@ -426,7 +441,7 @@ async def handle_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not await guarded(update, runtime):
         return
     runtime.reset()
-    await reply_with_menu(update, "Reset выполнен: фоновые задачи остановлены, runtime/API state очищен, temp work очищен. Архивы exports и logs сохранены.")
+    await reply_with_menu(update, "Reset выполнен: фоновые задачи остановлены, runtime/API state очищен, temp work очищен. Архивы exports и logs сохранены.", runtime)
 
 
 async def send_archive_or_parts(context: ContextTypes.DEFAULT_TYPE, chat_id: int, zip_path: Path, runtime: BotRuntime) -> None:
@@ -468,11 +483,11 @@ async def handle_log_full(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     try:
         zip_path = build_logs_archive(runtime.settings, runtime.logger)
-        await reply_with_menu(update, f"Log_full готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}")
+        await reply_with_menu(update, f"Log_full готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}", runtime)
         await send_archive_or_parts(context, update.effective_chat.id, zip_path, runtime)
     except Exception as exc:  # noqa: BLE001
         runtime.logger.exception("Log_full failed: %s", exc)
-        await reply_with_menu(update, f"Log_full ошибка: {exc}")
+        await reply_with_menu(update, f"Log_full ошибка: {exc}", runtime)
 
 
 def main() -> None:

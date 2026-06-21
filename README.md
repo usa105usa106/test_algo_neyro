@@ -1,4 +1,4 @@
-# ChatGPT Scan Bot 30d — v17_full_strict_lines
+# ChatGPT Scan Bot 30d — v25_full
 
 Telegram bot for manual / semi-automatic trading analysis with ChatGPT.
 
@@ -147,7 +147,7 @@ No trading endpoints exist in this bot: no `place_order`, no `cancel_order`, no 
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## v17_full_strict_lines exact-symbol update
+## v25_full exact-symbol update
 
 - Gold exact: `XAU_USDT` = MEXC `GOLD(XAU)USDT`.
 - BTC exact: `BTC_USDT`.
@@ -157,7 +157,7 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - `XAUT_USDT` and `UKOIL_USDT` are intentionally not used as replacements because prices differ.
 
 
-## v17_full_strict_lines exact-symbol rule
+## v25_full exact-symbol rule
 
 Fallbacks are disabled intentionally. XAU and XAUT have different prices, and WTI and Brent have different prices.
 The bot scans only these exact trade symbols:
@@ -171,7 +171,7 @@ The bot scans only these exact trade symbols:
 If an exact symbol is unavailable, the scan should fail visibly and `/log_full` should be used for diagnostics.
 
 
-## v17_full_strict_lines update
+## v25_full update
 - Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
 - Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
 - Removed confusing exact-candidate remapping in archive resolution.
@@ -179,16 +179,16 @@ If an exact symbol is unavailable, the scan should fail visibly and `/log_full` 
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
 
 
-## v17_full_strict_lines format note
+## v25_full format note
 - Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
 - Limit orders and TP1/TP2/TP3 are written in a column.
 
-## v17_full_strict_lines TP compact format note
+## v25_full TP compact format note
 - Setup output now embeds management directly into take-profit lines.
 - TP format: `TP1: price — закрыть 33%, SL в б/у`, `TP2: price — закрыть 33%, SL в б/у`, `TP3: price — закрыть остаток`.
 - Separate `Сопровождение:` section is removed from `setup_format.txt`.
 
-## v17_full_strict_lines update
+## v25_full update
 - `setup_format.txt` now forces the final answer to be one markdown `txt` code block.
 - LIMIT orders must be one per line.
 - TP1/TP2/TP3 must be one per line.
