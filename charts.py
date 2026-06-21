@@ -127,7 +127,7 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
     logger.info("Created %s chart files for %s", len(chart_files), symbol)
     return ChartJobResult(chart_files=chart_files, warnings=warnings)
 
-# --- v25 montage-only helpers. Standard v17 chart functions above are unchanged. ---
+# --- v26 montage-only helpers. Standard v17 chart functions above are unchanged. ---
 
 
 def _pillow_montage():
@@ -302,11 +302,13 @@ def create_montage_for_symbol(
         "Task:",
         task_hint,
     ]
+    legend_text = "MA7 orange | MA25 blue | MA99 purple | dashed = current price"
     y = 30
     for i, line in enumerate(lines):
         font = title_font if i == 0 else (small_font if line.startswith(("Task:", "Charts:", "Indicators:")) else body_font)
         draw.text((28, y), line, fill=(25, 25, 25), font=font)
         y += 52 if i == 0 else 40
+    draw.text((28, cell_h - 44), legend_text, fill=(25, 25, 25), font=small_font)
     canvas.paste(info, positions["info"])
 
     out_path = out_dir / f"{symbol}_montage.jpg"
