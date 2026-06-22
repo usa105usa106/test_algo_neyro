@@ -664,14 +664,24 @@ def _aplus_direction_score(df: pd.DataFrame, direction: str) -> tuple[float, lis
     ma7 = float(close.rolling(7).mean().iloc[-1])
     ma25 = float(close.rolling(25).mean().iloc[-1])
     ma99 = float(close.rolling(99).mean().iloc[-1])
+
     high96 = float(high.tail(96).max())
     low96 = float(low.tail(96).min())
-    rng = max(high96 - low96, price * 0.0001)
-    range_pos = (price - low96) / rng
+    rng96 = max(high96 - low96, price * 0.0001)
+    range_pos = (price - low96) / rng96
+
+    high32 = float(high.tail(32).max())
+    low32 = float(low.tail(32).min())
+    rng32 = max(high32 - low32, price * 0.0001)
+    range_pos32 = (price - low32) / rng32
+
+    ret4 = float(price / close.iloc[-4] - 1.0) if len(close) >= 4 and close.iloc[-4] else 0.0
     ret8 = float(price / close.iloc[-8] - 1.0) if len(close) >= 8 and close.iloc[-8] else 0.0
     ret32 = float(price / close.iloc[-32] - 1.0) if len(close) >= 32 and close.iloc[-32] else 0.0
-    volatility = rng / max(price, 1e-9)
+    volatility = rng96 / max(price, 1e-9)
+    dist_ma7 = abs(price - ma7) / max(price, 1e-9)
     dist_ma25 = abs(price - ma25) / max(price, 1e-9)
+    ma_spread = abs(ma25 - ma99) / max(price, 1e-9)
 
     last32 = close.tail(32).pct_change().dropna()
     sign_changes = 0
@@ -679,64 +689,80 @@ def _aplus_direction_score(df: pd.DataFrame, direction: str) -> tuple[float, lis
         signs = last32.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0)).tolist()
         signs = [x for x in signs if x != 0]
         sign_changes = sum(1 for a, b in zip(signs, signs[1:]) if a != b)
-    choppy = sign_changes >= 18
-    middle_range = 0.44 <= range_pos <= 0.56
+
+    choppy = sign_changes >= 14
+    very_choppy = sign_changes >= 17
+    middle_range = 0.43 <= range_pos <= 0.57
 
     if direction == "LONG":
-        trend_ok = price > ma25 and ma25 >= ma99 * 0.997
-        momentum_ok = ret8 > 0 and ret32 > 0
-        late_entry = range_pos > 0.90 or ret8 > 0.070
-        zone_ok = 0.20 <= range_pos <= 0.86
-        zone_wide = 0.12 <= range_pos <= 0.92
-        trend = 28 if price > ma25 > ma99 else 20 if trend_ok else 10 if price > ma99 else 2
-        momentum = 18 if momentum_ok and ret8 <= 0.055 and ret32 <= 0.25 else 12 if momentum_ok else 5 if ret8 > 0 else 0
-        zone = 18 if zone_ok and not middle_range else 10 if zone_wide else 2
-        freshness = 14 if not late_entry and abs(ret8) <= 0.055 else 8 if not late_entry else -10
-        reasons.append(f"LONG price={price:.8g} ma7={ma7:.8g} ma25={ma25:.8g} ma99={ma99:.8g} range_pos={range_pos:.2f}")
-    else:
-        trend_ok = price < ma25 and ma25 <= ma99 * 1.003
-        momentum_ok = ret8 < 0 and ret32 < 0
-        late_entry = range_pos < 0.10 or ret8 < -0.070
-        zone_ok = 0.14 <= range_pos <= 0.80
-        zone_wide = 0.08 <= range_pos <= 0.88
-        trend = 28 if price < ma25 < ma99 else 20 if trend_ok else 10 if price < ma99 else 2
-        momentum = 18 if momentum_ok and ret8 >= -0.055 and ret32 >= -0.25 else 12 if momentum_ok else 5 if ret8 < 0 else 0
-        zone = 18 if zone_ok and not middle_range else 10 if zone_wide else 2
-        freshness = 14 if not late_entry and abs(ret8) <= 0.055 else 8 if not late_entry else -10
-        reasons.append(f"SHORT price={price:.8g} ma7={ma7:.8g} ma25={ma25:.8g} ma99={ma99:.8g} range_pos={range_pos:.2f}")
+        trend_ok = price > ma25 > ma99 and ma_spread >= 0.0015
+        momentum_ok = ret8 > 0.002 and ret32 > 0.008
+        not_overheated = range_pos <= 0.78 and range_pos32 <= 0.82 and ret8 <= 0.035 and ret32 <= 0.12
+        entry_zone_ok = 0.28 <= range_pos <= 0.74 and dist_ma25 <= 0.025 and dist_ma7 <= 0.018
+        late_entry = range_pos > 0.82 or range_pos32 > 0.88 or ret8 > 0.040 or ret4 > 0.030
 
-    vol_score = 12 if 0.012 <= volatility <= 0.20 else 8 if 0.004 <= volatility <= 0.28 else 2
-    clean_score = 8 if dist_ma25 <= 0.050 else 5 if dist_ma25 <= 0.090 else 1
+        trend = 24 if trend_ok else 16 if price > ma25 and price > ma99 else 8 if price > ma99 else 0
+        momentum = 20 if momentum_ok and ret8 <= 0.030 and ret32 <= 0.10 else 13 if ret8 > 0 and ret32 > 0 else 5 if ret8 > 0 else 0
+        zone = 20 if entry_zone_ok and not middle_range else 12 if 0.22 <= range_pos <= 0.80 and dist_ma25 <= 0.04 else 4
+        freshness = 14 if not late_entry and not_overheated else 8 if not late_entry else -12
+        reasons.append(f"LONG price={price:.8g} ma7={ma7:.8g} ma25={ma25:.8g} ma99={ma99:.8g} range_pos={range_pos:.2f} range_pos32={range_pos32:.2f}")
+    else:
+        trend_ok = price < ma25 < ma99 and ma_spread >= 0.0015
+        momentum_ok = ret8 < -0.002 and ret32 < -0.008
+        not_overheated = range_pos >= 0.22 and range_pos32 >= 0.18 and ret8 >= -0.035 and ret32 >= -0.12
+        entry_zone_ok = 0.26 <= range_pos <= 0.72 and dist_ma25 <= 0.025 and dist_ma7 <= 0.018
+        late_entry = range_pos < 0.18 or range_pos32 < 0.12 or ret8 < -0.040 or ret4 < -0.030
+
+        trend = 24 if trend_ok else 16 if price < ma25 and price < ma99 else 8 if price < ma99 else 0
+        momentum = 20 if momentum_ok and ret8 >= -0.030 and ret32 >= -0.10 else 13 if ret8 < 0 and ret32 < 0 else 5 if ret8 < 0 else 0
+        zone = 20 if entry_zone_ok and not middle_range else 12 if 0.20 <= range_pos <= 0.78 and dist_ma25 <= 0.04 else 4
+        freshness = 14 if not late_entry and not_overheated else 8 if not late_entry else -12
+        reasons.append(f"SHORT price={price:.8g} ma7={ma7:.8g} ma25={ma25:.8g} ma99={ma99:.8g} range_pos={range_pos:.2f} range_pos32={range_pos32:.2f}")
+
+    vol_score = 10 if 0.012 <= volatility <= 0.16 else 6 if 0.006 <= volatility <= 0.22 else 1
+    clean_score = 10 if dist_ma25 <= 0.018 and sign_changes <= 12 else 6 if dist_ma25 <= 0.030 and sign_changes <= 15 else 2
     score = trend + momentum + zone + vol_score + clean_score + freshness
 
-    cap = 98.0
+    cap = 96.0
     caps: list[str] = []
     if not trend_ok:
         cap = min(cap, 78.0)
-        caps.append("no_clear_1h_trend_cap78")
+        caps.append("no_clean_15m_trend_cap78")
     if not momentum_ok:
         cap = min(cap, 86.0)
         caps.append("weak_momentum_cap86")
-    if middle_range:
+    if not entry_zone_ok:
         cap = min(cap, 88.0)
-        caps.append("middle_range_cap88")
+        caps.append("no_clean_entry_zone_cap88")
+    if middle_range:
+        cap = min(cap, 84.0)
+        caps.append("middle_range_cap84")
     if late_entry:
-        cap = min(cap, 82.0)
-        caps.append("late_entry_cap82")
-    if not (0.004 <= volatility <= 0.28):
+        cap = min(cap, 80.0)
+        caps.append("late_entry_cap80")
+    if not not_overheated:
+        cap = min(cap, 84.0)
+        caps.append("overheated_move_cap84")
+    if not (0.006 <= volatility <= 0.22):
         cap = min(cap, 82.0)
         caps.append("bad_volatility_cap82")
-    if dist_ma25 > 0.090:
-        cap = min(cap, 84.0)
-        caps.append("overextended_from_ma25_cap84")
+    if dist_ma25 > 0.030:
+        cap = min(cap, 82.0)
+        caps.append("far_from_ma25_cap82")
+    if dist_ma7 > 0.025:
+        cap = min(cap, 86.0)
+        caps.append("far_from_ma7_cap86")
     if choppy:
-        cap = min(cap, 84.0)
-        caps.append("choppy_15m_cap84")
+        cap = min(cap, 86.0)
+        caps.append("choppy_15m_cap86")
+    if very_choppy:
+        cap = min(cap, 82.0)
+        caps.append("very_choppy_15m_cap82")
 
     score = max(0.0, min(cap, score))
     reasons.append(f"trend={trend} momentum={momentum} zone={zone} vol={vol_score} clean={clean_score} freshness={freshness}")
-    reasons.append(f"ret8={ret8:.3%} ret32={ret32:.3%} volatility96={volatility:.3%} dist_ma25={dist_ma25:.3%} sign_changes32={sign_changes}")
-    reasons.append("gates=" + (", ".join(caps) if caps else "passed; max_score_cap98"))
+    reasons.append(f"ret4={ret4:.3%} ret8={ret8:.3%} ret32={ret32:.3%} volatility96={volatility:.3%} dist_ma7={dist_ma7:.3%} dist_ma25={dist_ma25:.3%} sign_changes32={sign_changes}")
+    reasons.append("gates=" + (", ".join(caps) if caps else "passed; max_score_cap96"))
     return score, reasons
 
 
@@ -859,8 +885,8 @@ async def build_aplus_hunter_archive(
     score_threshold: float = 90.0,
 ) -> Path | None:
     utc_build_stamp = utc_stamp()
-    scan_stamp = moscow_scan_stamp()
-    scan_id = f"aplus-{scan_stamp}-{utc_build_stamp}"
+    start_scan_stamp = moscow_scan_stamp()
+    scan_id = f"aplus-{start_scan_stamp}-{utc_build_stamp}"
     started_perf = time.perf_counter()
     started_utc = datetime.now(timezone.utc)
     created_msk = (started_utc + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
@@ -982,8 +1008,11 @@ async def build_aplus_hunter_archive(
         candidates = built_candidates
         _aplus_log(logger, scan_id, "MONTAGE_STAGE_DONE", charts=len(chart_files), symbols=candidate_symbols, warnings=len(warnings), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
 
+        completed_utc = datetime.now(timezone.utc)
+        completed_msk = (completed_utc + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+        archive_scan_stamp = (completed_utc + timedelta(hours=3)).strftime("%H%M_%d%m")
         await reporter.report(93, "пишу A+ Hunter task/manifest")
-        task_text = _aplus_hunter_task_text(candidate_symbols, created_msk, candidates)
+        task_text = _aplus_hunter_task_text(candidate_symbols, completed_msk, candidates)
         (build_dir / "task.txt").write_text(task_text + "\n", encoding="utf-8")
         write_json(build_dir / "screener_report.json", {
             "mode": "aplus_hunter",
@@ -998,6 +1027,9 @@ async def build_aplus_hunter_archive(
             "score_errors": score_errors[:50],
             "scan_id": scan_id,
             "started_at_utc": started_utc.isoformat(),
+            "completed_at_utc": completed_utc.isoformat(),
+            "completed_at_utc_plus_3_msk": completed_msk,
+            "archive_stamp_utc_plus_3": archive_scan_stamp,
             "elapsed_total_sec": round(time.perf_counter() - started_perf, 2),
             "note": "Screener candidates are hints only. ChatGPT must confirm true A+ from montage/task.txt.",
         })
@@ -1006,9 +1038,10 @@ async def build_aplus_hunter_archive(
             "collector_version": settings.app_version,
             "scan_id": scan_id,
             "started_at_utc": started_utc.isoformat(),
-            "completed_at_utc": datetime.now(timezone.utc).isoformat(),
-            "created_at_utc_plus_3_msk": created_msk,
-            "telegram_archive_stamp_utc_plus_3": scan_stamp,
+            "completed_at_utc": completed_utc.isoformat(),
+            "created_at_utc_plus_3_msk": completed_msk,
+            "completed_at_utc_plus_3_msk": completed_msk,
+            "telegram_archive_stamp_utc_plus_3": archive_scan_stamp,
             "exchange": "MEXC_FUTURES_PUBLIC",
             "base_url": settings.mexc_base_url,
             "market_type": settings.mexc_market_type,
@@ -1051,14 +1084,14 @@ async def build_aplus_hunter_archive(
         })
 
         await reporter.report(98, "упаковываю A+ Hunter zip")
-        zip_path = settings.exports_dir / f"chatgpt_scan-aplus_hunter-{scan_stamp}.zip"
+        zip_path = settings.exports_dir / f"aplus_hunter-{archive_scan_stamp}.zip"
         zip_directory(build_dir, zip_path)
-        write_json(settings.exports_dir / f"chatgpt_scan-aplus_hunter-{scan_stamp}.sha256.json", {
+        write_json(settings.exports_dir / f"aplus_hunter-{archive_scan_stamp}.sha256.json", {
             "file": zip_path.name,
             "sha256": file_sha256(zip_path),
             "size_bytes": zip_path.stat().st_size,
             "size_human": human_bytes(zip_path.stat().st_size),
-            "created_at_utc_plus_3_msk": created_msk,
+            "created_at_utc_plus_3_msk": completed_msk,
         })
         _aplus_log(logger, scan_id, "ARCHIVE_READY", file=zip_path.name, size=human_bytes(zip_path.stat().st_size), candidates=len(candidate_symbols), elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
         await reporter.report(100, f"архив A+ Hunter готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}, candidates={len(candidate_symbols)}", force=True)

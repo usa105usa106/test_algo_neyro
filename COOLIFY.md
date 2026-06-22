@@ -1,4 +1,4 @@
-# Coolify deploy — ChatGPT Scan Bot 30d v31_full_aplus_hunter_log_full
+# Coolify deploy — ChatGPT Scan Bot 30d v32_full_aplus_hunter_strict_shortname
 
 ## Required env
 
@@ -19,7 +19,7 @@ SECRET_ENCRYPTION_KEY=
 2. Open Telegram.
 3. Send `/start`.
 4. The latest message will contain the current button panel at the bottom of the chat.
-5. Press `/ping`; expected version: `v31_full_aplus_hunter_log_full`.
+5. Press `/ping`; expected version: `v32_full_aplus_hunter_strict_shortname`.
 6. Press a scan button, for example `📊 Gold 30d`, or send a text symbol like `xrp` for a custom exact-symbol archive.
 
 ## Output
@@ -52,7 +52,7 @@ If MEXC rate-limits or returns “too frequent”, the bot increases pause and r
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## v31_full_aplus_hunter_log_full update
+## v32_full_aplus_hunter_strict_shortname update
 - Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
 - Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
 - Removed confusing exact-candidate remapping in archive resolution.
@@ -60,30 +60,30 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
 
 
-## v31_full_aplus_hunter_log_full update
-- Version is now `v31_full_aplus_hunter_log_full`.
+## v32_full_aplus_hunter_strict_shortname update
+- Version is now `v32_full_aplus_hunter_strict_shortname`.
 - Generated setup headers are `Setup Gold / XAU:`, `Setup Silver / XAG:`, and `Setup Oil / WTI:`.
 - Setup templates do not include a separate `Актив:` line.
 
 
-## v31_full_aplus_hunter_log_full format note
+## v32_full_aplus_hunter_strict_shortname format note
 - Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
 - Limit orders and TP1/TP2/TP3 are written in a column.
 
-## v31_full_aplus_hunter_log_full TP compact format note
+## v32_full_aplus_hunter_strict_shortname TP compact format note
 - Setup output embeds TP management directly into TP1/TP2/TP3 lines.
 - Separate `Сопровождение:` section is removed.
 
-## v31_full_aplus_hunter_log_full update
+## v32_full_aplus_hunter_strict_shortname update
 - Setup output format is now strict vertical format inside one markdown `txt` code block.
 - This prevents ChatGPT from merging LIMIT and TP lines into one paragraph.
 
-## v31_full_aplus_hunter_log_full update
+## v32_full_aplus_hunter_strict_shortname update
 - Added separate `🎯 A+ Hunter: ON/OFF` toggle.
 - The hunter loop is sequential: scan/build/send must finish, then the 05:00 timer starts.
 - Existing scan buttons and their task files are unchanged.
 
 
-## v31_full_aplus_hunter_log_full update
+## v32_full_aplus_hunter_strict_shortname update
 - A+ Hunter universe now adds forced symbols to top-200 without duplicates.
 - Existing scan buttons and existing task texts are unchanged.
