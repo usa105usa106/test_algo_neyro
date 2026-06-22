@@ -1,4 +1,4 @@
-# ChatGPT Scan Bot 30d — v29_full_aplus_hunter_dedupe_fix
+# ChatGPT Scan Bot 30d — v31_full_aplus_hunter_log_full
 
 Telegram bot for manual / semi-automatic trading analysis with ChatGPT.
 
@@ -147,7 +147,7 @@ No trading endpoints exist in this bot: no `place_order`, no `cancel_order`, no 
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## v29_full_aplus_hunter_dedupe_fix exact-symbol update
+## v31_full_aplus_hunter_log_full exact-symbol update
 
 - Gold exact: `XAU_USDT` = MEXC `GOLD(XAU)USDT`.
 - BTC exact: `BTC_USDT`.
@@ -157,7 +157,7 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - `XAUT_USDT` and `UKOIL_USDT` are intentionally not used as replacements because prices differ.
 
 
-## v29_full_aplus_hunter_dedupe_fix exact-symbol rule
+## v31_full_aplus_hunter_log_full exact-symbol rule
 
 Fallbacks are disabled intentionally. XAU and XAUT have different prices, and WTI and Brent have different prices.
 The bot scans only these exact trade symbols:
@@ -171,7 +171,7 @@ The bot scans only these exact trade symbols:
 If an exact symbol is unavailable, the scan should fail visibly and `/log_full` should be used for diagnostics.
 
 
-## v29_full_aplus_hunter_dedupe_fix update
+## v31_full_aplus_hunter_log_full update
 - Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
 - Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
 - Removed confusing exact-candidate remapping in archive resolution.
@@ -179,22 +179,22 @@ If an exact symbol is unavailable, the scan should fail visibly and `/log_full` 
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
 
 
-## v29_full_aplus_hunter_dedupe_fix format note
+## v31_full_aplus_hunter_log_full format note
 - Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
 - Limit orders and TP1/TP2/TP3 are written in a column.
 
-## v29_full_aplus_hunter_dedupe_fix TP compact format note
+## v31_full_aplus_hunter_log_full TP compact format note
 - Setup output now embeds management directly into take-profit lines.
 - TP format: `TP1: price — закрыть 33%, SL в б/у`, `TP2: price — закрыть 33%, SL в б/у`, `TP3: price — закрыть остаток`.
 - Separate `Сопровождение:` section is removed from `setup_format.txt`.
 
-## v29_full_aplus_hunter_dedupe_fix update
+## v31_full_aplus_hunter_log_full update
 - `setup_format.txt` now forces the final answer to be one markdown `txt` code block.
 - LIMIT orders must be one per line.
 - TP1/TP2/TP3 must be one per line.
 - Absolute bans were added against writing `Лимит: SHORT LIMIT 1 ... SHORT LIMIT 2 ...` or `Тейки: TP1 ... TP2 ... TP3 ...` on one line.
 
-## v29_full_aplus_hunter_dedupe_fix update
+## v31_full_aplus_hunter_log_full update
 - Added separate `🎯 A+ Hunter: ON/OFF` toggle.
 - A+ Hunter runs a top-200 screener loop and waits 5 minutes after the previous loop fully finishes before the next loop starts.
 - If no A+ candidate is found, no archive is created.
@@ -202,7 +202,7 @@ If an exact symbol is unavailable, the scan should fail visibly and `/log_full` 
 - A+ Hunter uses its own `task.txt`: true A+ only, MARKET + LIMIT plan, anti-chase rule. Existing standard and montage task files are unchanged.
 
 
-## v29_full_aplus_hunter_dedupe_fix update
+## v31_full_aplus_hunter_log_full update
 - A+ Hunter universe is now top-200 most liquid USDT futures plus forced symbols without duplicates.
 - Forced symbols are resolved only from real MEXC Futures ticker symbols: NVDA/NVIDIA, TSLA, USOIL, SILVER, XAU, BTC, ETH, SP500/US500/SPX, GOOGL/GOOGLE, NAS100/US100/NASDAQ.
 - Existing scan buttons and existing task texts are unchanged.

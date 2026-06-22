@@ -462,19 +462,24 @@ async def _edit_aplus_status(context: ContextTypes.DEFAULT_TYPE, chat_id: int, r
 
 
 async def _aplus_countdown(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runtime: BotRuntime, base_text: str, seconds: int = 300) -> None:
+    runtime.logger.info("A+ Hunter countdown start chat_id=%s seconds=%s", chat_id, seconds)
     remaining = int(seconds)
     while remaining > 0 and runtime.aplus_hunter_enabled:
         await _edit_aplus_status(context, chat_id, runtime, f"{base_text}\n\n⏳ Следующий scan через: {_format_mmss(remaining)}")
         sleep_for = 15 if remaining > 20 else 5
         await asyncio.sleep(min(sleep_for, remaining))
         remaining -= sleep_for
+    runtime.logger.info("A+ Hunter countdown stop chat_id=%s enabled=%s remaining=%s", chat_id, runtime.aplus_hunter_enabled, remaining)
 
 
 async def send_aplus_archive_only(context: ContextTypes.DEFAULT_TYPE, chat_id: int, zip_path: Path, runtime: BotRuntime) -> None:
     limit_bytes = runtime.settings.telegram_send_limit_mb * 1024 * 1024
     size = zip_path.stat().st_size
+    runtime.logger.info("A+ Hunter Telegram send start file=%s size=%s chat_id=%s limit_mb=%s", zip_path.name, human_bytes(size), chat_id, runtime.settings.telegram_send_limit_mb)
     if size > limit_bytes:
+        runtime.logger.info("A+ Hunter archive exceeds Telegram limit, sending as parts: file=%s", zip_path.name)
         await send_archive_or_parts(context, chat_id, zip_path, runtime)
+        runtime.logger.info("A+ Hunter Telegram send done via parts file=%s", zip_path.name)
         return
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
     with zip_path.open("rb") as f:
@@ -484,6 +489,7 @@ async def send_aplus_archive_only(context: ContextTypes.DEFAULT_TYPE, chat_id: i
             filename=zip_path.name,
             caption=f"🎯 A+ Hunter archive: {zip_path.name}\nРазмер: {human_bytes(size)}",
         )
+    runtime.logger.info("A+ Hunter Telegram send done file=%s chat_id=%s", zip_path.name, chat_id)
 
 
 async def toggle_aplus_hunter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -491,6 +497,7 @@ async def toggle_aplus_hunter(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     chat_id = update.effective_chat.id
     if runtime.aplus_hunter_enabled:
+        runtime.logger.info("A+ Hunter toggle OFF chat_id=%s", chat_id)
         runtime.aplus_hunter_enabled = False
         await _replace_aplus_status(
             context,
@@ -500,6 +507,7 @@ async def toggle_aplus_hunter(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
+    runtime.logger.info("A+ Hunter toggle ON chat_id=%s", chat_id)
     runtime.aplus_hunter_enabled = True
     await _replace_aplus_status(context, chat_id, runtime, "🎯 A+ Hunter: ON\n\nЗапускаю первый top-200 + forced scan.")
     if not runtime.aplus_hunter_task or runtime.aplus_hunter_task.done():
@@ -508,6 +516,8 @@ async def toggle_aplus_hunter(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
     runtime: BotRuntime = context.application.bot_data["runtime"]
+    loop_started = time.perf_counter()
+    runtime.logger.info("A+ Hunter loop started chat_id=%s", chat_id)
     try:
         while runtime.aplus_hunter_enabled:
             if runtime.active_task and not runtime.active_task.done():
@@ -520,6 +530,8 @@ async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
                 await _aplus_countdown(context, chat_id, runtime, "🎯 A+ Hunter: ожидание свободного слота", 60)
                 continue
 
+            runtime.logger.info("A+ Hunter cycle start chat_id=%s", chat_id)
+            cycle_started = time.perf_counter()
             runtime.aplus_hunter_busy = True
             await _replace_aplus_status(
                 context,
@@ -536,6 +548,7 @@ async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
             try:
                 zip_path = await build_aplus_hunter_archive(runtime.settings, runtime.logger, runtime.secret_store, progress)
                 runtime.last_export = zip_path or runtime.last_export
+                runtime.logger.info("A+ Hunter cycle build finished chat_id=%s zip=%s elapsed_sec=%.2f", chat_id, zip_path.name if zip_path else None, time.perf_counter() - cycle_started)
             except Exception as exc:  # noqa: BLE001
                 runtime.logger.exception("A+ Hunter failed: %s", exc)
                 runtime.aplus_hunter_busy = False
@@ -554,6 +567,7 @@ async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
                 break
 
             if zip_path is None:
+                runtime.logger.info("A+ Hunter cycle done no archive chat_id=%s elapsed_sec=%.2f", chat_id, time.perf_counter() - cycle_started)
                 base = "✅ Scan завершён.\n\nA+ candidates: 0\nЛучше подождать."
                 await _replace_aplus_status(context, chat_id, runtime, base)
                 await _aplus_countdown(context, chat_id, runtime, base, 300)
@@ -566,6 +580,7 @@ async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
                 f"✅ A+ Hunter archive готов.\n\nФайл: {zip_path.name}\nОтправляю архив в чат.",
             )
             await send_aplus_archive_only(context, chat_id, zip_path, runtime)
+            runtime.logger.info("A+ Hunter cycle done archive sent chat_id=%s file=%s elapsed_sec=%.2f", chat_id, zip_path.name, time.perf_counter() - cycle_started)
             if not runtime.aplus_hunter_enabled:
                 break
             base = (
@@ -579,6 +594,7 @@ async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
     except asyncio.CancelledError:
         runtime.logger.warning("A+ Hunter loop cancelled")
     finally:
+        runtime.logger.info("A+ Hunter loop stopped chat_id=%s elapsed_sec=%.2f enabled=%s", chat_id, time.perf_counter() - loop_started, runtime.aplus_hunter_enabled)
         runtime.aplus_hunter_busy = False
         if not runtime.aplus_hunter_enabled:
             runtime.aplus_hunter_task = None

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Awaitable
@@ -526,6 +527,17 @@ FORMAT NOTES:
 """.strip()
 
 
+
+
+def _aplus_log(logger: logging.Logger, scan_id: str, stage: str, **fields: Any) -> None:
+    detail = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+    logger.info("A+ Hunter [%s] %s%s", scan_id, stage, f" | {detail}" if detail else "")
+
+
+def _aplus_log_error(logger: logging.Logger, scan_id: str, stage: str, exc: BaseException, **fields: Any) -> None:
+    detail = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+    logger.exception("A+ Hunter [%s] ERROR %s%s: %s", scan_id, stage, f" | {detail}" if detail else "", exc)
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         if value is None or value == "":
@@ -629,8 +641,14 @@ async def _aplus_top200_symbols(client: MexcSpotClient, logger: logging.Logger, 
                     item["dedupe_reason"] = "already_in_top_200"
                     break
 
-    logger.info("A+ Hunter universe selected: top=%s final=%s unique=%s forced=%s", len(selected), len(symbols), len(set(symbols)), forced_report)
-    logger.info("A+ Hunter top symbols selected: %s", symbols[:20])
+    duplicate_count = len(symbols) - len(set(symbols))
+    logger.info(
+        "A+ Hunter universe selected: top=%s final=%s unique=%s duplicates=%s forced=%s",
+        len(selected), len(symbols), len(set(symbols)), duplicate_count, forced_report,
+    )
+    logger.info("A+ Hunter top symbols selected first20=%s", symbols[:20])
+    if duplicate_count:
+        logger.error("A+ Hunter universe duplicate symbols detected: final=%s unique=%s", len(symbols), len(set(symbols)))
     return symbols, selected, forced_report
 
 
@@ -655,25 +673,71 @@ def _aplus_direction_score(df: pd.DataFrame, direction: str) -> tuple[float, lis
     volatility = rng / max(price, 1e-9)
     dist_ma25 = abs(price - ma25) / max(price, 1e-9)
 
+    last32 = close.tail(32).pct_change().dropna()
+    sign_changes = 0
+    if len(last32) >= 3:
+        signs = last32.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0)).tolist()
+        signs = [x for x in signs if x != 0]
+        sign_changes = sum(1 for a, b in zip(signs, signs[1:]) if a != b)
+    choppy = sign_changes >= 18
+    middle_range = 0.44 <= range_pos <= 0.56
+
     if direction == "LONG":
-        trend = 35 if price > ma25 > ma99 else 26 if price > ma25 and ma25 >= ma99 * 0.997 else 14 if price > ma99 else 4
-        momentum = 20 if ret8 > 0 and ret32 > 0 else 14 if ret8 > 0 else 6
-        zone = 20 if 0.35 <= range_pos <= 0.78 else 13 if 0.22 <= range_pos <= 0.86 else 4
-        late_penalty = max(0.0, (range_pos - 0.86) * 80.0)
+        trend_ok = price > ma25 and ma25 >= ma99 * 0.997
+        momentum_ok = ret8 > 0 and ret32 > 0
+        late_entry = range_pos > 0.90 or ret8 > 0.070
+        zone_ok = 0.20 <= range_pos <= 0.86
+        zone_wide = 0.12 <= range_pos <= 0.92
+        trend = 28 if price > ma25 > ma99 else 20 if trend_ok else 10 if price > ma99 else 2
+        momentum = 18 if momentum_ok and ret8 <= 0.055 and ret32 <= 0.25 else 12 if momentum_ok else 5 if ret8 > 0 else 0
+        zone = 18 if zone_ok and not middle_range else 10 if zone_wide else 2
+        freshness = 14 if not late_entry and abs(ret8) <= 0.055 else 8 if not late_entry else -10
         reasons.append(f"LONG price={price:.8g} ma7={ma7:.8g} ma25={ma25:.8g} ma99={ma99:.8g} range_pos={range_pos:.2f}")
     else:
-        trend = 35 if price < ma25 < ma99 else 26 if price < ma25 and ma25 <= ma99 * 1.003 else 14 if price < ma99 else 4
-        momentum = 20 if ret8 < 0 and ret32 < 0 else 14 if ret8 < 0 else 6
-        zone = 20 if 0.22 <= range_pos <= 0.65 else 13 if 0.14 <= range_pos <= 0.78 else 4
-        late_penalty = max(0.0, (0.14 - range_pos) * 80.0)
+        trend_ok = price < ma25 and ma25 <= ma99 * 1.003
+        momentum_ok = ret8 < 0 and ret32 < 0
+        late_entry = range_pos < 0.10 or ret8 < -0.070
+        zone_ok = 0.14 <= range_pos <= 0.80
+        zone_wide = 0.08 <= range_pos <= 0.88
+        trend = 28 if price < ma25 < ma99 else 20 if trend_ok else 10 if price < ma99 else 2
+        momentum = 18 if momentum_ok and ret8 >= -0.055 and ret32 >= -0.25 else 12 if momentum_ok else 5 if ret8 < 0 else 0
+        zone = 18 if zone_ok and not middle_range else 10 if zone_wide else 2
+        freshness = 14 if not late_entry and abs(ret8) <= 0.055 else 8 if not late_entry else -10
         reasons.append(f"SHORT price={price:.8g} ma7={ma7:.8g} ma25={ma25:.8g} ma99={ma99:.8g} range_pos={range_pos:.2f}")
 
-    vol_score = 15 if 0.012 <= volatility <= 0.12 else 10 if 0.006 <= volatility <= 0.18 else 3
-    clean_score = 10 if dist_ma25 <= 0.045 else 6 if dist_ma25 <= 0.075 else 2
-    score = trend + momentum + zone + vol_score + clean_score - late_penalty
-    reasons.append(f"trend={trend} momentum={momentum} zone={zone} vol={vol_score} clean={clean_score} late_penalty={late_penalty:.1f}")
-    reasons.append(f"ret8={ret8:.3%} ret32={ret32:.3%} volatility96={volatility:.3%}")
-    return max(0.0, min(100.0, score)), reasons
+    vol_score = 12 if 0.012 <= volatility <= 0.20 else 8 if 0.004 <= volatility <= 0.28 else 2
+    clean_score = 8 if dist_ma25 <= 0.050 else 5 if dist_ma25 <= 0.090 else 1
+    score = trend + momentum + zone + vol_score + clean_score + freshness
+
+    cap = 98.0
+    caps: list[str] = []
+    if not trend_ok:
+        cap = min(cap, 78.0)
+        caps.append("no_clear_1h_trend_cap78")
+    if not momentum_ok:
+        cap = min(cap, 86.0)
+        caps.append("weak_momentum_cap86")
+    if middle_range:
+        cap = min(cap, 88.0)
+        caps.append("middle_range_cap88")
+    if late_entry:
+        cap = min(cap, 82.0)
+        caps.append("late_entry_cap82")
+    if not (0.004 <= volatility <= 0.28):
+        cap = min(cap, 82.0)
+        caps.append("bad_volatility_cap82")
+    if dist_ma25 > 0.090:
+        cap = min(cap, 84.0)
+        caps.append("overextended_from_ma25_cap84")
+    if choppy:
+        cap = min(cap, 84.0)
+        caps.append("choppy_15m_cap84")
+
+    score = max(0.0, min(cap, score))
+    reasons.append(f"trend={trend} momentum={momentum} zone={zone} vol={vol_score} clean={clean_score} freshness={freshness}")
+    reasons.append(f"ret8={ret8:.3%} ret32={ret32:.3%} volatility96={volatility:.3%} dist_ma25={dist_ma25:.3%} sign_changes32={sign_changes}")
+    reasons.append("gates=" + (", ".join(caps) if caps else "passed; max_score_cap98"))
+    return score, reasons
 
 
 async def _aplus_score_symbol(client: MexcSpotClient, symbol: str, server_ms: int, logger: logging.Logger) -> dict[str, Any]:
@@ -792,48 +856,71 @@ async def build_aplus_hunter_archive(
     *,
     top_limit: int = 200,
     max_candidates: int = 3,
-    score_threshold: float = 85.0,
+    score_threshold: float = 90.0,
 ) -> Path | None:
     utc_build_stamp = utc_stamp()
     scan_stamp = moscow_scan_stamp()
-    created_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+    scan_id = f"aplus-{scan_stamp}-{utc_build_stamp}"
+    started_perf = time.perf_counter()
+    started_utc = datetime.now(timezone.utc)
+    created_msk = (started_utc + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
 
     reporter = PercentReporter("A+ Hunter", progress_cb)
     api_mask = secret_store.load_mexc_api_mask()
     client = MexcSpotClient(settings.mexc_base_url, logger, settings.mexc_market_type)
+    # A+ Hunter is a lightweight screener. Keep old 30d scan throttling untouched,
+    # but do not spend minutes sleeping between 15m score requests here.
+    if settings.mexc_market_type == "futures":
+        client.min_request_interval_sec = 0.35
+    _aplus_log(logger, scan_id, "START", version=settings.app_version, top_limit=top_limit, score_threshold=score_threshold, max_candidates=max_candidates, throttle=client.min_request_interval_sec)
     try:
         await reporter.report(0, "старт top-200 + forced screener", force=True)
+        stage_t0 = time.perf_counter()
         ping_ok = await client.ping()
         server_time = await client.server_time()
         server_ms = int(server_time["serverTime"])
+        _aplus_log(logger, scan_id, "API_READY", ping_ok=ping_ok, server_ms=server_ms, elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
 
         await reporter.report(5, "получаю top-200 по ликвидности + forced symbols")
+        stage_t0 = time.perf_counter()
         top_symbols, top_tickers, forced_report = await _aplus_top200_symbols(client, logger, top_limit)
+        _aplus_log(logger, scan_id, "UNIVERSE_READY", top_tickers=len(top_tickers), universe=len(top_symbols), unique=len(set(top_symbols)), duplicates=len(top_symbols)-len(set(top_symbols)), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
         if not top_symbols:
+            _aplus_log(logger, scan_id, "NO_UNIVERSE", elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
             await reporter.report(100, "top-200 + forced universe пустой, A+ candidates: 0", force=True)
             return None
 
         scored: list[dict[str, Any]] = []
+        score_errors: list[dict[str, Any]] = []
         total = len(top_symbols)
+        stage_t0 = time.perf_counter()
+        _aplus_log(logger, scan_id, "SCORING_START", symbols=total)
         for idx, symbol in enumerate(top_symbols, start=1):
             try:
                 item = await _aplus_score_symbol(client, symbol, server_ms, logger)
                 scored.append(item)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("A+ Hunter score failed symbol=%s: %s", symbol, exc)
-                scored.append({"symbol": symbol, "score": 0.0, "direction": "WAIT", "error": str(exc)[:300]})
+                _aplus_log_error(logger, scan_id, "SCORE_SYMBOL", exc, symbol=symbol, index=idx)
+                err_item = {"symbol": symbol, "score": 0.0, "direction": "WAIT", "error": str(exc)[:300]}
+                score_errors.append(err_item)
+                scored.append(err_item)
             if idx % 20 == 0 or idx == total:
                 pct = 5 + (idx / max(1, total)) * 55
                 best_score = max((float(x.get("score", 0.0)) for x in scored), default=0.0)
+                _aplus_log(logger, scan_id, "SCORING_PROGRESS", scored=idx, total=total, best_score=f"{best_score:.1f}", errors=len(score_errors), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
                 await reporter.report(pct, f"scored {idx}/{total}; best_score={best_score:.1f}")
 
         scored.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+        best_score = float(scored[0].get("score", 0.0)) if scored else 0.0
+        _aplus_log(logger, scan_id, "SCORING_DONE", scored=len(scored), best_score=f"{best_score:.1f}", errors=len(score_errors), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
         candidates = [x for x in scored if float(x.get("score", 0.0)) >= score_threshold][:max_candidates]
         if not candidates:
-            await reporter.report(100, f"A+ candidates: 0; best_score={float(scored[0].get('score', 0.0)) if scored else 0:.1f}", force=True)
+            _aplus_log(logger, scan_id, "NO_CANDIDATES", best_score=f"{best_score:.1f}", threshold=score_threshold, elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
+            await reporter.report(100, f"A+ candidates: 0; best_score={best_score:.1f}", force=True)
             return None
 
         candidate_symbols = [str(x["symbol"]) for x in candidates]
+        _aplus_log(logger, scan_id, "CANDIDATES_FOUND", symbols=candidate_symbols, scores=[x.get("score") for x in candidates])
         await reporter.report(65, f"кандидаты найдены: {candidate_symbols}; строю montage")
 
         build_dir = settings.work_dir / f"scan_build_{utc_build_stamp}" / "chatgpt_scan_aplus_hunter"
@@ -845,32 +932,55 @@ async def build_aplus_hunter_archive(
 
         interval_ms = INTERVAL_MS.get(settings.base_interval, 60_000)
         window = DownloadWindow.last_days_from_end_ms(settings.days_back, server_ms, interval_ms)
+        stage_t0 = time.perf_counter()
+        _aplus_log(logger, scan_id, "MONTAGE_STAGE_START", candidate_symbols=candidate_symbols)
         exchange_info = await client.exchange_info(candidate_symbols)
         row_counts: dict[str, int] = {}
         chart_files: list[str] = []
+        built_symbols: list[str] = []
+        built_candidates: list[dict[str, Any]] = []
         warnings: list[str] = []
 
         for idx, symbol in enumerate(candidate_symbols, start=1):
+            symbol_t0 = time.perf_counter()
             await reporter.report(65 + (idx - 1) / max(1, len(candidate_symbols)) * 25, f"скачиваю 30d для montage: {symbol}")
-            df = await client.download_klines_dataframe(symbol, settings.base_interval, window)
-            if df.empty:
-                warnings.append(f"{symbol}: empty 30d data, skipped")
+            try:
+                _aplus_log(logger, scan_id, "MONTAGE_DOWNLOAD_START", symbol=symbol, index=idx, total=len(candidate_symbols))
+                df = await client.download_klines_dataframe(symbol, settings.base_interval, window)
+                if df.empty:
+                    msg = f"{symbol}: empty 30d data, skipped"
+                    warnings.append(msg)
+                    _aplus_log(logger, scan_id, "MONTAGE_SKIP_EMPTY", symbol=symbol)
+                    continue
+                expected_rows = max(1, int((window.end_ms - window.start_ms) // interval_ms))
+                actual_days_by_rows = len(df) * interval_ms / (24 * 60 * 60 * 1000)
+                if len(df) / expected_rows < settings.min_coverage_ratio and actual_days_by_rows < settings.min_effective_days:
+                    msg = f"{symbol}: too little 30d coverage, skipped rows={len(df)} expected={expected_rows}"
+                    warnings.append(msg)
+                    _aplus_log(logger, scan_id, "MONTAGE_SKIP_COVERAGE", symbol=symbol, rows=len(df), expected=expected_rows, actual_days=f"{actual_days_by_rows:.1f}")
+                    continue
+                row_counts[symbol] = int(len(df))
+                df_ohlcv = _downloaded_df_to_ohlcv_montage(df)
+                task_hint = "A+ Hunter: confirm only true A+. MARKET + LIMIT allowed. If not true A+, answer WAIT."
+                rel = await asyncio.to_thread(create_montage_for_symbol, symbol, df_ohlcv, charts_out, created_msk, task_hint, logger)
+                chart_files.append(rel)
+                built_symbols.append(symbol)
+                built_candidates.append(next((c for c in candidates if str(c.get("symbol")) == symbol), {"symbol": symbol}))
+                _aplus_log(logger, scan_id, "MONTAGE_SYMBOL_DONE", symbol=symbol, rows=len(df), file=rel, elapsed_sec=f"{time.perf_counter()-symbol_t0:.2f}")
+                await reporter.report(65 + idx / max(1, len(candidate_symbols)) * 25, f"montage готов: {rel}")
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"{symbol}: montage failed: {str(exc)[:300]}")
+                _aplus_log_error(logger, scan_id, "MONTAGE_SYMBOL", exc, symbol=symbol, index=idx)
                 continue
-            expected_rows = max(1, int((window.end_ms - window.start_ms) // interval_ms))
-            actual_days_by_rows = len(df) * interval_ms / (24 * 60 * 60 * 1000)
-            if len(df) / expected_rows < settings.min_coverage_ratio and actual_days_by_rows < settings.min_effective_days:
-                warnings.append(f"{symbol}: too little 30d coverage, skipped rows={len(df)} expected={expected_rows}")
-                continue
-            row_counts[symbol] = int(len(df))
-            df_ohlcv = _downloaded_df_to_ohlcv_montage(df)
-            task_hint = "A+ Hunter: confirm only true A+. MARKET + LIMIT allowed. If not true A+, answer WAIT."
-            rel = await asyncio.to_thread(create_montage_for_symbol, symbol, df_ohlcv, charts_out, created_msk, task_hint, logger)
-            chart_files.append(rel)
-            await reporter.report(65 + idx / max(1, len(candidate_symbols)) * 25, f"montage готов: {rel}")
 
         if not chart_files:
+            _aplus_log(logger, scan_id, "NO_CHARTS", warnings=len(warnings), elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
             await reporter.report(100, "кандидаты были, но montage не построен из-за данных; archive skipped", force=True)
             return None
+
+        candidate_symbols = built_symbols
+        candidates = built_candidates
+        _aplus_log(logger, scan_id, "MONTAGE_STAGE_DONE", charts=len(chart_files), symbols=candidate_symbols, warnings=len(warnings), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
 
         await reporter.report(93, "пишу A+ Hunter task/manifest")
         task_text = _aplus_hunter_task_text(candidate_symbols, created_msk, candidates)
@@ -885,12 +995,18 @@ async def build_aplus_hunter_archive(
             "top_tickers_count": len(top_tickers),
             "universe_symbols_count": len(top_symbols),
             "forced_symbols": forced_report,
+            "score_errors": score_errors[:50],
+            "scan_id": scan_id,
+            "started_at_utc": started_utc.isoformat(),
+            "elapsed_total_sec": round(time.perf_counter() - started_perf, 2),
             "note": "Screener candidates are hints only. ChatGPT must confirm true A+ from montage/task.txt.",
         })
         manifest = {
             "archive_type": "chatgpt_scan_30d_mexc_futures_aplus_hunter",
             "collector_version": settings.app_version,
-            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "scan_id": scan_id,
+            "started_at_utc": started_utc.isoformat(),
+            "completed_at_utc": datetime.now(timezone.utc).isoformat(),
             "created_at_utc_plus_3_msk": created_msk,
             "telegram_archive_stamp_utc_plus_3": scan_stamp,
             "exchange": "MEXC_FUTURES_PUBLIC",
@@ -916,6 +1032,8 @@ async def build_aplus_hunter_archive(
             "chart_files": chart_files,
             "chart_set": {"montage": "one JPG per A+ Hunter candidate: 1D, 4H, 1H, 15m, 1m + info/task panel"},
             "warnings": warnings,
+            "score_errors_count": len(score_errors),
+            "elapsed_total_sec": round(time.perf_counter() - started_perf, 2),
             "instruction_files": ["task.txt"],
             "screener_report_file": "screener_report.json",
             "answer_rule_for_chatgpt": "Confirm only true A+. If confirmed, return A+ setup with MARKET + LIMIT and anti-chase rule. If not: A+ нет, лучше ещё подождать.",
@@ -942,10 +1060,14 @@ async def build_aplus_hunter_archive(
             "size_human": human_bytes(zip_path.stat().st_size),
             "created_at_utc_plus_3_msk": created_msk,
         })
-        logger.info("A+ Hunter archive ready: %s size=%s", zip_path, human_bytes(zip_path.stat().st_size))
+        _aplus_log(logger, scan_id, "ARCHIVE_READY", file=zip_path.name, size=human_bytes(zip_path.stat().st_size), candidates=len(candidate_symbols), elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
         await reporter.report(100, f"архив A+ Hunter готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}, candidates={len(candidate_symbols)}", force=True)
         return zip_path
+    except Exception as exc:  # noqa: BLE001
+        _aplus_log_error(logger, scan_id, "FATAL", exc, elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
+        raise
     finally:
+        _aplus_log(logger, scan_id, "CLIENT_CLOSE")
         await client.close()
 
 
