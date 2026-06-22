@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -37,6 +39,7 @@ BTN_SYMBOLS_CHECK = "symbols_check"
 BTN_MONTAGE = "montage_toggle"
 BTN_APLUS_HUNTER = "aplus_hunter_toggle"
 BTN_SCAN_PREFIX = "scan:"
+APLUS_SYMBOL_COOLDOWN_SEC = 45 * 60
 
 
 class BotRuntime:
@@ -55,6 +58,7 @@ class BotRuntime:
         self.aplus_hunter_task: asyncio.Task | None = None
         self.aplus_hunter_busy = False
         self.aplus_status_message_id: int | None = None
+        self.aplus_symbol_cooldown_until: dict[str, float] = {}
 
     def is_admin(self, update: Update) -> bool:
         if self.settings.admin_telegram_id is None:
@@ -82,6 +86,7 @@ class BotRuntime:
         self.aplus_hunter_task = None
         self.aplus_hunter_busy = False
         self.aplus_status_message_id = None
+        self.aplus_symbol_cooldown_until.clear()
         self.awaiting_api_step.clear()
         self.secret_store.clear()
         self.montage_enabled = False
@@ -472,6 +477,26 @@ async def _aplus_countdown(context: ContextTypes.DEFAULT_TYPE, chat_id: int, run
     runtime.logger.info("A+ Hunter countdown stop chat_id=%s enabled=%s remaining=%s", chat_id, runtime.aplus_hunter_enabled, remaining)
 
 
+def _read_aplus_archive_symbols(zip_path: Path, logger: logging.Logger) -> list[str]:
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            with zf.open("manifest.json") as f:
+                manifest = json.loads(f.read().decode("utf-8"))
+        symbols = manifest.get("symbols") or manifest.get("requested_symbols") or []
+        return [str(s).upper().replace("-", "_") for s in symbols if str(s).strip()]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("A+ Hunter could not read archive symbols for cooldown file=%s: %s", zip_path, exc)
+        return []
+
+
+def _active_aplus_cooldowns(runtime: BotRuntime) -> dict[str, float]:
+    now = time.time()
+    expired = [s for s, until in runtime.aplus_symbol_cooldown_until.items() if until <= now]
+    for symbol in expired:
+        runtime.aplus_symbol_cooldown_until.pop(symbol, None)
+    return dict(runtime.aplus_symbol_cooldown_until)
+
+
 async def send_aplus_archive_only(context: ContextTypes.DEFAULT_TYPE, chat_id: int, zip_path: Path, runtime: BotRuntime) -> None:
     limit_bytes = runtime.settings.telegram_send_limit_mb * 1024 * 1024
     size = zip_path.stat().st_size
@@ -546,7 +571,16 @@ async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
 
             zip_path: Path | None = None
             try:
-                zip_path = await build_aplus_hunter_archive(runtime.settings, runtime.logger, runtime.secret_store, progress)
+                cooldowns = _active_aplus_cooldowns(runtime)
+                if cooldowns:
+                    runtime.logger.info("A+ Hunter active symbol cooldowns: %s", {s: int((until - time.time()) / 60) for s, until in cooldowns.items()})
+                zip_path = await build_aplus_hunter_archive(
+                    runtime.settings,
+                    runtime.logger,
+                    runtime.secret_store,
+                    progress,
+                    symbol_cooldowns=cooldowns,
+                )
                 runtime.last_export = zip_path or runtime.last_export
                 runtime.logger.info("A+ Hunter cycle build finished chat_id=%s zip=%s elapsed_sec=%.2f", chat_id, zip_path.name if zip_path else None, time.perf_counter() - cycle_started)
             except Exception as exc:  # noqa: BLE001
@@ -568,7 +602,7 @@ async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
 
             if zip_path is None:
                 runtime.logger.info("A+ Hunter cycle done no archive chat_id=%s elapsed_sec=%.2f", chat_id, time.perf_counter() - cycle_started)
-                base = "✅ Scan завершён.\n\nA+ candidates: 0\nЛучше подождать."
+                base = "✅ Scan завершён.\n\nA+ candidates после фильтров/cooldown: 0\nЛучше подождать."
                 await _replace_aplus_status(context, chat_id, runtime, base)
                 await _aplus_countdown(context, chat_id, runtime, base, 300)
                 continue
@@ -580,6 +614,16 @@ async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
                 f"✅ A+ Hunter archive готов.\n\nФайл: {zip_path.name}\nОтправляю архив в чат.",
             )
             await send_aplus_archive_only(context, chat_id, zip_path, runtime)
+            archive_symbols = _read_aplus_archive_symbols(zip_path, runtime.logger)
+            cooldown_until = time.time() + APLUS_SYMBOL_COOLDOWN_SEC
+            for symbol in archive_symbols:
+                runtime.aplus_symbol_cooldown_until[symbol] = cooldown_until
+            if archive_symbols:
+                runtime.logger.info(
+                    "A+ Hunter symbol cooldown set symbols=%s cooldown_sec=%s",
+                    archive_symbols,
+                    APLUS_SYMBOL_COOLDOWN_SEC,
+                )
             runtime.logger.info("A+ Hunter cycle done archive sent chat_id=%s file=%s elapsed_sec=%.2f", chat_id, zip_path.name, time.perf_counter() - cycle_started)
             if not runtime.aplus_hunter_enabled:
                 break

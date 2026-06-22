@@ -743,6 +743,15 @@ def _aplus_direction_score(df: pd.DataFrame, direction: str) -> tuple[float, lis
     if not not_overheated:
         cap = min(cap, 84.0)
         caps.append("overheated_move_cap84")
+
+    if direction == "LONG":
+        late_after_15m_impulse = ret32 > 0.035 and range_pos32 > 0.55 and dist_ma25 > 0.018
+    else:
+        late_after_15m_impulse = ret32 < -0.035 and range_pos32 < 0.45 and dist_ma25 > 0.018
+    if late_after_15m_impulse:
+        cap = min(cap, 84.0)
+        caps.append("late_after_15m_impulse_cap84")
+
     if not (0.006 <= volatility <= 0.22):
         cap = min(cap, 82.0)
         caps.append("bad_volatility_cap82")
@@ -766,6 +775,57 @@ def _aplus_direction_score(df: pd.DataFrame, direction: str) -> tuple[float, lis
     return score, reasons
 
 
+def _aplus_1m_late_market_cap(df_1m: pd.DataFrame, direction: str) -> tuple[float | None, list[str]]:
+    """Extra A+ Hunter gate: avoid MARKET after a sharp 1m spike without a clean pullback."""
+    reasons: list[str] = []
+    if len(df_1m) < 90:
+        return None, ["1m_late_gate_skipped_too_few_rows"]
+
+    close = df_1m["close"].astype(float)
+    high = df_1m["high"].astype(float)
+    low = df_1m["low"].astype(float)
+    price = float(close.iloc[-1])
+    ma7 = float(close.rolling(7).mean().iloc[-1])
+    ma25 = float(close.rolling(25).mean().iloc[-1])
+
+    ret15 = float(price / close.iloc[-15] - 1.0) if len(close) >= 15 and close.iloc[-15] else 0.0
+    ret30 = float(price / close.iloc[-30] - 1.0) if len(close) >= 30 and close.iloc[-30] else 0.0
+    ret60 = float(price / close.iloc[-60] - 1.0) if len(close) >= 60 and close.iloc[-60] else 0.0
+
+    high60 = float(high.tail(60).max())
+    low60 = float(low.tail(60).min())
+    rng60 = max(high60 - low60, price * 0.0001)
+    range_pos60 = (price - low60) / rng60
+    high240 = float(high.tail(240).max()) if len(high) >= 240 else high60
+    low240 = float(low.tail(240).min()) if len(low) >= 240 else low60
+    rng240 = max(high240 - low240, price * 0.0001)
+    range_pos240 = (price - low240) / rng240
+    dist_ma7 = abs(price - ma7) / max(price, 1e-9)
+    dist_ma25 = abs(price - ma25) / max(price, 1e-9)
+
+    cap: float | None = None
+    if direction == "LONG":
+        rise60 = float(high60 / close.iloc[-60] - 1.0) if len(close) >= 60 and close.iloc[-60] else 0.0
+        fast_spike = ret15 >= 0.008 or ret30 >= 0.012 or rise60 >= 0.022
+        no_clean_pullback = range_pos60 >= 0.62 or range_pos240 >= 0.70 or dist_ma7 >= 0.006 or dist_ma25 >= 0.012
+        very_late = (ret30 >= 0.020 or rise60 >= 0.035) and (range_pos60 >= 0.55 or range_pos240 >= 0.65)
+        if fast_spike and no_clean_pullback:
+            cap = 82.0 if very_late else 84.0
+            reasons.append(f"1m_late_market_long_cap{int(cap)} ret15={ret15:.3%} ret30={ret30:.3%} ret60={ret60:.3%} rise60={rise60:.3%} range_pos60={range_pos60:.2f} range_pos240={range_pos240:.2f} dist_ma7={dist_ma7:.3%} dist_ma25={dist_ma25:.3%}")
+    else:
+        drop60 = float(low60 / close.iloc[-60] - 1.0) if len(close) >= 60 and close.iloc[-60] else 0.0
+        fast_spike = ret15 <= -0.008 or ret30 <= -0.012 or drop60 <= -0.022
+        no_clean_pullback = range_pos60 <= 0.38 or range_pos240 <= 0.30 or dist_ma7 >= 0.006 or dist_ma25 >= 0.012
+        very_late = (ret30 <= -0.020 or drop60 <= -0.035) and (range_pos60 <= 0.45 or range_pos240 <= 0.35)
+        if fast_spike and no_clean_pullback:
+            cap = 82.0 if very_late else 84.0
+            reasons.append(f"1m_late_market_short_cap{int(cap)} ret15={ret15:.3%} ret30={ret30:.3%} ret60={ret60:.3%} drop60={drop60:.3%} range_pos60={range_pos60:.2f} range_pos240={range_pos240:.2f} dist_ma7={dist_ma7:.3%} dist_ma25={dist_ma25:.3%}")
+
+    if cap is None:
+        reasons.append(f"1m_late_gate_passed ret15={ret15:.3%} ret30={ret30:.3%} ret60={ret60:.3%} range_pos60={range_pos60:.2f} range_pos240={range_pos240:.2f} dist_ma7={dist_ma7:.3%} dist_ma25={dist_ma25:.3%}")
+    return cap, reasons
+
+
 async def _aplus_score_symbol(client: MexcSpotClient, symbol: str, server_ms: int, logger: logging.Logger) -> dict[str, Any]:
     interval = "15m"
     window = DownloadWindow.last_days_from_end_ms(4, server_ms, INTERVAL_MS[interval])
@@ -785,6 +845,20 @@ async def _aplus_score_symbol(client: MexcSpotClient, symbol: str, server_ms: in
         score = short_score
         reason = short_reason
     price = _safe_float(df["close"].iloc[-1], 0.0)
+
+    if score >= 90.0:
+        try:
+            window_1m = DownloadWindow.last_days_from_end_ms(1, server_ms, INTERVAL_MS["1m"])
+            rows_1m = await client.futures_klines(symbol, "1m", window_1m.start_ms, window_1m.end_ms)
+            df_1m = client._klines_to_df(symbol, "1m", rows_1m)
+            one_min_cap, one_min_reason = _aplus_1m_late_market_cap(df_1m, direction)
+            reason.extend(one_min_reason)
+            if one_min_cap is not None and score > one_min_cap:
+                score = one_min_cap
+        except Exception as exc:
+            logger.warning("A+ Hunter 1m late gate failed for %s: %s", symbol, exc)
+            reason.append(f"1m_late_gate_error={exc}")
+
     logger.info("A+ Hunter scored %s direction=%s score=%.1f", symbol, direction, score)
     return {
         "symbol": symbol,
@@ -883,6 +957,7 @@ async def build_aplus_hunter_archive(
     top_limit: int = 200,
     max_candidates: int = 3,
     score_threshold: float = 90.0,
+    symbol_cooldowns: dict[str, float] | None = None,
 ) -> Path | None:
     utc_build_stamp = utc_stamp()
     start_scan_stamp = moscow_scan_stamp()
@@ -891,7 +966,7 @@ async def build_aplus_hunter_archive(
     started_utc = datetime.now(timezone.utc)
     created_msk = (started_utc + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
 
-    reporter = PercentReporter("A+ Hunter", progress_cb)
+    reporter = PercentReporter("A+ Hunter", progress_cb)  # kept for old-style emergency/final messages only
     api_mask = secret_store.load_mexc_api_mask()
     client = MexcSpotClient(settings.mexc_base_url, logger, settings.mexc_market_type)
     # A+ Hunter is a lightweight screener. Keep old 30d scan throttling untouched,
@@ -900,20 +975,20 @@ async def build_aplus_hunter_archive(
         client.min_request_interval_sec = 0.35
     _aplus_log(logger, scan_id, "START", version=settings.app_version, top_limit=top_limit, score_threshold=score_threshold, max_candidates=max_candidates, throttle=client.min_request_interval_sec)
     try:
-        await reporter.report(0, "старт top-200 + forced screener", force=True)
+        await _notify(progress_cb, f"Stage: Scoring\nScoring: 0% — scored 0/{top_limit}\nBest score: 0.0\nThreshold: {score_threshold:.0f}")
         stage_t0 = time.perf_counter()
         ping_ok = await client.ping()
         server_time = await client.server_time()
         server_ms = int(server_time["serverTime"])
         _aplus_log(logger, scan_id, "API_READY", ping_ok=ping_ok, server_ms=server_ms, elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
 
-        await reporter.report(5, "получаю top-200 по ликвидности + forced symbols")
+        await _notify(progress_cb, "Stage: Universe\nПолучаю top-200 по ликвидности + forced symbols")
         stage_t0 = time.perf_counter()
         top_symbols, top_tickers, forced_report = await _aplus_top200_symbols(client, logger, top_limit)
         _aplus_log(logger, scan_id, "UNIVERSE_READY", top_tickers=len(top_tickers), universe=len(top_symbols), unique=len(set(top_symbols)), duplicates=len(top_symbols)-len(set(top_symbols)), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
         if not top_symbols:
             _aplus_log(logger, scan_id, "NO_UNIVERSE", elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
-            await reporter.report(100, "top-200 + forced universe пустой, A+ candidates: 0", force=True)
+            await _notify(progress_cb, "✅ Scan завершён.\n\nScoring: 0% — universe пустой\nA+ candidates: 0")
             return None
 
         scored: list[dict[str, Any]] = []
@@ -931,23 +1006,43 @@ async def build_aplus_hunter_archive(
                 score_errors.append(err_item)
                 scored.append(err_item)
             if idx % 20 == 0 or idx == total:
-                pct = 5 + (idx / max(1, total)) * 55
+                scoring_pct = int(idx / max(1, total) * 100)
                 best_score = max((float(x.get("score", 0.0)) for x in scored), default=0.0)
-                _aplus_log(logger, scan_id, "SCORING_PROGRESS", scored=idx, total=total, best_score=f"{best_score:.1f}", errors=len(score_errors), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
-                await reporter.report(pct, f"scored {idx}/{total}; best_score={best_score:.1f}")
+                _aplus_log(logger, scan_id, "SCORING_PROGRESS", scored=idx, total=total, scoring_pct=scoring_pct, best_score=f"{best_score:.1f}", errors=len(score_errors), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
+                await _notify(progress_cb, f"Stage: Scoring\nScoring: {scoring_pct}% — scored {idx}/{total}\nBest score: {best_score:.1f}\nThreshold: {score_threshold:.0f}")
 
         scored.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
         best_score = float(scored[0].get("score", 0.0)) if scored else 0.0
         _aplus_log(logger, scan_id, "SCORING_DONE", scored=len(scored), best_score=f"{best_score:.1f}", errors=len(score_errors), elapsed_sec=f"{time.perf_counter()-stage_t0:.2f}")
-        candidates = [x for x in scored if float(x.get("score", 0.0)) >= score_threshold][:max_candidates]
+        raw_candidates = [x for x in scored if float(x.get("score", 0.0)) >= score_threshold]
+        cooldown_now = time.time()
+        active_cooldowns = {str(k).upper().replace("-", "_"): float(v) for k, v in (symbol_cooldowns or {}).items() if float(v) > cooldown_now}
+        cooldown_skipped: list[dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
+        for item in raw_candidates:
+            symbol = str(item.get("symbol", "")).upper().replace("-", "_")
+            cooldown_until = active_cooldowns.get(symbol)
+            if cooldown_until and cooldown_until > cooldown_now:
+                remaining_sec = int(cooldown_until - cooldown_now)
+                cooldown_skipped.append({
+                    "symbol": symbol,
+                    "score": item.get("score"),
+                    "remaining_sec": remaining_sec,
+                    "remaining_min": round(remaining_sec / 60, 1),
+                })
+                _aplus_log(logger, scan_id, "COOLDOWN_SKIP", symbol=symbol, score=item.get("score"), remaining_sec=remaining_sec)
+                continue
+            candidates.append(item)
+            if len(candidates) >= max_candidates:
+                break
         if not candidates:
-            _aplus_log(logger, scan_id, "NO_CANDIDATES", best_score=f"{best_score:.1f}", threshold=score_threshold, elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
-            await reporter.report(100, f"A+ candidates: 0; best_score={best_score:.1f}", force=True)
+            _aplus_log(logger, scan_id, "NO_CANDIDATES", best_score=f"{best_score:.1f}", threshold=score_threshold, raw_candidates=len(raw_candidates), cooldown_skipped=len(cooldown_skipped), elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
+            await _notify(progress_cb, f"✅ Scoring завершён.\n\nScoring: 100% — scored {len(scored)}/{total}\nBest score: {best_score:.1f}\nThreshold: {score_threshold:.0f}\nA+ candidates: 0")
             return None
 
         candidate_symbols = [str(x["symbol"]) for x in candidates]
-        _aplus_log(logger, scan_id, "CANDIDATES_FOUND", symbols=candidate_symbols, scores=[x.get("score") for x in candidates])
-        await reporter.report(65, f"кандидаты найдены: {candidate_symbols}; строю montage")
+        _aplus_log(logger, scan_id, "CANDIDATES_FOUND", symbols=candidate_symbols, scores=[x.get("score") for x in candidates], raw_candidates=len(raw_candidates), cooldown_skipped=len(cooldown_skipped))
+        await _notify(progress_cb, f"🎯 A+ candidate найден.\n\nScoring: 100% — scored {len(scored)}/{total}\nBest score: {best_score:.1f}\nCandidates: {', '.join(candidate_symbols)}\n\n🧩 Строю montage archive...")
 
         build_dir = settings.work_dir / f"scan_build_{utc_build_stamp}" / "chatgpt_scan_aplus_hunter"
         safe_rmtree(build_dir)
@@ -969,7 +1064,7 @@ async def build_aplus_hunter_archive(
 
         for idx, symbol in enumerate(candidate_symbols, start=1):
             symbol_t0 = time.perf_counter()
-            await reporter.report(65 + (idx - 1) / max(1, len(candidate_symbols)) * 25, f"скачиваю 30d для montage: {symbol}")
+            await _notify(progress_cb, f"🧩 Montage archive...\n\nСимвол: {symbol} ({idx}/{len(candidate_symbols)})\nСтатус: скачиваю 30d данные")
             try:
                 _aplus_log(logger, scan_id, "MONTAGE_DOWNLOAD_START", symbol=symbol, index=idx, total=len(candidate_symbols))
                 df = await client.download_klines_dataframe(symbol, settings.base_interval, window)
@@ -993,7 +1088,7 @@ async def build_aplus_hunter_archive(
                 built_symbols.append(symbol)
                 built_candidates.append(next((c for c in candidates if str(c.get("symbol")) == symbol), {"symbol": symbol}))
                 _aplus_log(logger, scan_id, "MONTAGE_SYMBOL_DONE", symbol=symbol, rows=len(df), file=rel, elapsed_sec=f"{time.perf_counter()-symbol_t0:.2f}")
-                await reporter.report(65 + idx / max(1, len(candidate_symbols)) * 25, f"montage готов: {rel}")
+                await _notify(progress_cb, f"🧩 Montage archive...\n\nГотово: {symbol} ({idx}/{len(candidate_symbols)})")
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"{symbol}: montage failed: {str(exc)[:300]}")
                 _aplus_log_error(logger, scan_id, "MONTAGE_SYMBOL", exc, symbol=symbol, index=idx)
@@ -1001,7 +1096,7 @@ async def build_aplus_hunter_archive(
 
         if not chart_files:
             _aplus_log(logger, scan_id, "NO_CHARTS", warnings=len(warnings), elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
-            await reporter.report(100, "кандидаты были, но montage не построен из-за данных; archive skipped", force=True)
+            await _notify(progress_cb, "✅ Scan завершён.\n\nКандидаты были, но montage не построен из-за данных.\nA+ candidates: 0")
             return None
 
         candidate_symbols = built_symbols
@@ -1011,7 +1106,7 @@ async def build_aplus_hunter_archive(
         completed_utc = datetime.now(timezone.utc)
         completed_msk = (completed_utc + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
         archive_scan_stamp = (completed_utc + timedelta(hours=3)).strftime("%H%M_%d%m")
-        await reporter.report(93, "пишу A+ Hunter task/manifest")
+        await _notify(progress_cb, "🧩 Montage archive готов.\n\nПишу task/manifest...")
         task_text = _aplus_hunter_task_text(candidate_symbols, completed_msk, candidates)
         (build_dir / "task.txt").write_text(task_text + "\n", encoding="utf-8")
         write_json(build_dir / "screener_report.json", {
@@ -1025,6 +1120,8 @@ async def build_aplus_hunter_archive(
             "universe_symbols_count": len(top_symbols),
             "forced_symbols": forced_report,
             "score_errors": score_errors[:50],
+            "cooldown_skipped": cooldown_skipped,
+            "raw_candidates_count": len(raw_candidates),
             "scan_id": scan_id,
             "started_at_utc": started_utc.isoformat(),
             "completed_at_utc": completed_utc.isoformat(),
@@ -1066,6 +1163,8 @@ async def build_aplus_hunter_archive(
             "chart_set": {"montage": "one JPG per A+ Hunter candidate: 1D, 4H, 1H, 15m, 1m + info/task panel"},
             "warnings": warnings,
             "score_errors_count": len(score_errors),
+            "cooldown_skipped_count": len(cooldown_skipped),
+            "raw_candidates_count": len(raw_candidates),
             "elapsed_total_sec": round(time.perf_counter() - started_perf, 2),
             "instruction_files": ["task.txt"],
             "screener_report_file": "screener_report.json",
@@ -1083,7 +1182,7 @@ async def build_aplus_hunter_archive(
             "note": "Market data uses MEXC public futures endpoints. No place_order/cancel_order/trading endpoints exist in this bot.",
         })
 
-        await reporter.report(98, "упаковываю A+ Hunter zip")
+        await _notify(progress_cb, "📦 Упаковываю A+ Hunter zip...")
         zip_path = settings.exports_dir / f"aplus_hunter-{archive_scan_stamp}.zip"
         zip_directory(build_dir, zip_path)
         write_json(settings.exports_dir / f"aplus_hunter-{archive_scan_stamp}.sha256.json", {
@@ -1094,7 +1193,7 @@ async def build_aplus_hunter_archive(
             "created_at_utc_plus_3_msk": completed_msk,
         })
         _aplus_log(logger, scan_id, "ARCHIVE_READY", file=zip_path.name, size=human_bytes(zip_path.stat().st_size), candidates=len(candidate_symbols), elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
-        await reporter.report(100, f"архив A+ Hunter готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}, candidates={len(candidate_symbols)}", force=True)
+        await _notify(progress_cb, f"✅ A+ Hunter archive готов.\n\nФайл: {zip_path.name}\nРазмер: {human_bytes(zip_path.stat().st_size)}\nCandidates: {len(candidate_symbols)}")
         return zip_path
     except Exception as exc:  # noqa: BLE001
         _aplus_log_error(logger, scan_id, "FATAL", exc, elapsed_total_sec=f"{time.perf_counter()-started_perf:.2f}")
