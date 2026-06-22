@@ -5,7 +5,7 @@ import logging
 import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Any, Callable, Awaitable
 
 import pandas as pd
 
@@ -524,6 +524,429 @@ FORMAT NOTES:
 - The final answer must be practical and ready to trade from the written levels.
 - Do not mention montage instructions in the final answer.
 """.strip()
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+FORCED_APLUS_SYMBOL_ALIASES: dict[str, tuple[str, ...]] = {
+    # Exact metals/oil/crypto symbols: no unsafe substitution such as XAU->XAUT or USOIL->UKOIL.
+    "NVDA": ("NVDA_USDT", "NVIDIA_USDT"),
+    "TSLA": ("TSLA_USDT",),
+    "USOIL": ("USOIL_USDT",),
+    "SILVER": ("SILVER_USDT",),
+    "XAU": ("XAU_USDT",),
+    "BTC": ("BTC_USDT",),
+    "ETH": ("ETH_USDT",),
+    "SP500": ("SP500_USDT", "US500_USDT", "SPX_USDT"),
+    "GOOGL": ("GOOGL_USDT", "GOOGLE_USDT"),
+    "NAS100": ("NAS100_USDT", "US100_USDT", "NASDAQ_USDT"),
+}
+
+
+def _ticker_liquidity_value(ticker: dict[str, Any]) -> float:
+    # MEXC response fields can vary by gateway; prefer quote/notional fields.
+    for key in ("amount24", "amount24h", "turnover24", "turnover24h", "volumeUsd24h", "quoteVolume"):
+        value = _safe_float(ticker.get(key), 0.0)
+        if value > 0:
+            return value
+    price = _safe_float(ticker.get("lastPrice") or ticker.get("last") or ticker.get("fairPrice"), 0.0)
+    volume = _safe_float(ticker.get("volume24") or ticker.get("volume24h") or ticker.get("vol24"), 0.0)
+    return price * volume
+
+
+def _normalize_aplus_symbol_alias(alias: str) -> str:
+    symbol = str(alias or "").upper().strip().replace("-", "_").replace("/", "_")
+    if not symbol:
+        return ""
+    if symbol.endswith("_USDT"):
+        return symbol
+    if symbol.endswith("USDT"):
+        return symbol[:-4] + "_USDT"
+    return f"{symbol}_USDT"
+
+
+def _resolve_forced_aplus_symbols(available_symbols: set[str]) -> tuple[list[str], list[dict[str, Any]]]:
+    resolved: list[str] = []
+    report: list[dict[str, Any]] = []
+    for asset, aliases in FORCED_APLUS_SYMBOL_ALIASES.items():
+        normalized_aliases = [_normalize_aplus_symbol_alias(alias) for alias in aliases]
+        match = next((symbol for symbol in normalized_aliases if symbol in available_symbols), None)
+        if match:
+            resolved.append(match)
+            report.append({"asset": asset, "resolved_symbol": match, "aliases_checked": normalized_aliases, "status": "resolved"})
+        else:
+            report.append({"asset": asset, "resolved_symbol": None, "aliases_checked": normalized_aliases, "status": "not_found_on_mexc_futures"})
+    return resolved, report
+
+
+async def _aplus_top200_symbols(client: MexcSpotClient, logger: logging.Logger, limit: int = 200) -> tuple[list[str], list[dict[str, Any]], list[dict[str, Any]]]:
+    tickers = await client.futures_tickers()
+    by_symbol: dict[str, dict[str, Any]] = {}
+    available_symbols: set[str] = set()
+    for ticker in tickers:
+        symbol = str(ticker.get("symbol") or "").upper().strip()
+        if not symbol.endswith("_USDT"):
+            continue
+        # Keep the user's global rule: only symbols with substring STOCK are blocked.
+        if "STOCK" in symbol:
+            continue
+        available_symbols.add(symbol)
+        liquidity = _ticker_liquidity_value(ticker)
+        if liquidity <= 0:
+            continue
+        item = dict(ticker)
+        item["symbol"] = symbol
+        item["_liquidity"] = liquidity
+        previous = by_symbol.get(symbol)
+        if previous is None or liquidity > float(previous.get("_liquidity", 0.0)):
+            by_symbol[symbol] = item
+    filtered = list(by_symbol.values())
+    filtered.sort(key=lambda x: x.get("_liquidity", 0.0), reverse=True)
+    selected = filtered[:limit]
+    symbols = [str(x.get("symbol") or "").upper().strip() for x in selected]
+
+    forced_symbols, forced_report = _resolve_forced_aplus_symbols(available_symbols)
+    seen = set(symbols)
+    for symbol in forced_symbols:
+        if symbol not in seen:
+            symbols.append(symbol)
+            seen.add(symbol)
+            for item in forced_report:
+                if item.get("resolved_symbol") == symbol:
+                    item["added_to_universe"] = True
+                    break
+        else:
+            for item in forced_report:
+                if item.get("resolved_symbol") == symbol:
+                    item["added_to_universe"] = False
+                    item["dedupe_reason"] = "already_in_top_200"
+                    break
+
+    logger.info("A+ Hunter universe selected: top=%s final=%s unique=%s forced=%s", len(selected), len(symbols), len(set(symbols)), forced_report)
+    logger.info("A+ Hunter top symbols selected: %s", symbols[:20])
+    return symbols, selected, forced_report
+
+
+def _aplus_direction_score(df: pd.DataFrame, direction: str) -> tuple[float, list[str]]:
+    reasons: list[str] = []
+    if len(df) < 120:
+        return 0.0, ["too_few_15m_candles"]
+
+    close = df["close"].astype(float)
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    price = float(close.iloc[-1])
+    ma7 = float(close.rolling(7).mean().iloc[-1])
+    ma25 = float(close.rolling(25).mean().iloc[-1])
+    ma99 = float(close.rolling(99).mean().iloc[-1])
+    high96 = float(high.tail(96).max())
+    low96 = float(low.tail(96).min())
+    rng = max(high96 - low96, price * 0.0001)
+    range_pos = (price - low96) / rng
+    ret8 = float(price / close.iloc[-8] - 1.0) if len(close) >= 8 and close.iloc[-8] else 0.0
+    ret32 = float(price / close.iloc[-32] - 1.0) if len(close) >= 32 and close.iloc[-32] else 0.0
+    volatility = rng / max(price, 1e-9)
+    dist_ma25 = abs(price - ma25) / max(price, 1e-9)
+
+    if direction == "LONG":
+        trend = 35 if price > ma25 > ma99 else 26 if price > ma25 and ma25 >= ma99 * 0.997 else 14 if price > ma99 else 4
+        momentum = 20 if ret8 > 0 and ret32 > 0 else 14 if ret8 > 0 else 6
+        zone = 20 if 0.35 <= range_pos <= 0.78 else 13 if 0.22 <= range_pos <= 0.86 else 4
+        late_penalty = max(0.0, (range_pos - 0.86) * 80.0)
+        reasons.append(f"LONG price={price:.8g} ma7={ma7:.8g} ma25={ma25:.8g} ma99={ma99:.8g} range_pos={range_pos:.2f}")
+    else:
+        trend = 35 if price < ma25 < ma99 else 26 if price < ma25 and ma25 <= ma99 * 1.003 else 14 if price < ma99 else 4
+        momentum = 20 if ret8 < 0 and ret32 < 0 else 14 if ret8 < 0 else 6
+        zone = 20 if 0.22 <= range_pos <= 0.65 else 13 if 0.14 <= range_pos <= 0.78 else 4
+        late_penalty = max(0.0, (0.14 - range_pos) * 80.0)
+        reasons.append(f"SHORT price={price:.8g} ma7={ma7:.8g} ma25={ma25:.8g} ma99={ma99:.8g} range_pos={range_pos:.2f}")
+
+    vol_score = 15 if 0.012 <= volatility <= 0.12 else 10 if 0.006 <= volatility <= 0.18 else 3
+    clean_score = 10 if dist_ma25 <= 0.045 else 6 if dist_ma25 <= 0.075 else 2
+    score = trend + momentum + zone + vol_score + clean_score - late_penalty
+    reasons.append(f"trend={trend} momentum={momentum} zone={zone} vol={vol_score} clean={clean_score} late_penalty={late_penalty:.1f}")
+    reasons.append(f"ret8={ret8:.3%} ret32={ret32:.3%} volatility96={volatility:.3%}")
+    return max(0.0, min(100.0, score)), reasons
+
+
+async def _aplus_score_symbol(client: MexcSpotClient, symbol: str, server_ms: int, logger: logging.Logger) -> dict[str, Any]:
+    interval = "15m"
+    window = DownloadWindow.last_days_from_end_ms(4, server_ms, INTERVAL_MS[interval])
+    rows = await client.futures_klines(symbol, interval, window.start_ms, window.end_ms)
+    df = client._klines_to_df(symbol, interval, rows)
+    if df.empty:
+        return {"symbol": symbol, "score": 0.0, "direction": "WAIT", "rows_15m": 0, "reason": ["empty_15m"]}
+
+    long_score, long_reason = _aplus_direction_score(df, "LONG")
+    short_score, short_reason = _aplus_direction_score(df, "SHORT")
+    if long_score >= short_score:
+        direction = "LONG"
+        score = long_score
+        reason = long_reason
+    else:
+        direction = "SHORT"
+        score = short_score
+        reason = short_reason
+    price = _safe_float(df["close"].iloc[-1], 0.0)
+    logger.info("A+ Hunter scored %s direction=%s score=%.1f", symbol, direction, score)
+    return {
+        "symbol": symbol,
+        "score": round(float(score), 2),
+        "direction": direction if score > 0 else "WAIT",
+        "long_score": round(float(long_score), 2),
+        "short_score": round(float(short_score), 2),
+        "last_price": price,
+        "rows_15m": int(len(df)),
+        "scan_interval": interval,
+        "reason": reason,
+    }
+
+
+def _aplus_hunter_task_text(symbols: list[str], created_msk: str, candidates: list[dict[str, Any]]) -> str:
+    assets = ", ".join(symbols)
+    lines = []
+    for c in candidates:
+        lines.append(f"- {c.get('symbol')}: screener_score={c.get('score')} direction_hint={c.get('direction')} last_price={c.get('last_price')}")
+    candidates_text = "\n".join(lines) if lines else "- none"
+    return f"""TASK: A+ HUNTER
+Analyze this MEXC Futures A+ Hunter montage archive.
+
+Archive created: {created_msk} UTC+3/MSK
+Candidate exact symbols: {assets}
+Screener hints only, NOT final confirmation:
+{candidates_text}
+
+IMPORTANT:
+- The screener only found symbols that look similar to A+.
+- You must verify the montage yourself.
+- Give a setup ONLY if it is truly A+.
+- If there is no true A+ after visual check, answer exactly:
+A+ нет, лучше ещё подождать.
+
+A+ DEFINITION:
+- Higher timeframes agree or there is an exceptionally clean rejection/continuation structure.
+- There is a clear entry zone and clear invalidation.
+- Entry is not late.
+- Stop is logical and not too wide.
+- TP1/TP2/TP3 are realistic from the current structure.
+- Do not force trades. If unsure, reject.
+
+ENTRY MODEL FOR TRUE A+ ONLY:
+- A+ may include MARKET entry, but only while price is still fresh and not late.
+- Always include both MARKET and LIMIT plan.
+- MARKET must have an invalidation/late-entry line:
+  Example LONG: "Не входить MARKET, если цена уже выше <price>."
+  Example SHORT: "Не входить MARKET, если цена уже ниже <price>."
+- Use the anti-chase rule: MARKET is allowed only if price has not moved more than roughly 25–35% of the path from MARKET entry to TP1.
+- LIMIT is the safer pullback entry from the zone.
+- If price already ran toward TP1 without entry, write WAIT / do not chase.
+
+OUTPUT RULES:
+- Answer in Russian only.
+- Return only final A+ setup blocks, no intro/outro.
+- Allowed classes: A+ or WAIT only.
+- Do NOT give A, SOFT, or weak setups in A+ Hunter.
+- If multiple true A+ setups exist, give multiple blocks ranked best first.
+- If no true A+ exists, answer exactly one line:
+A+ нет, лучше ещё подождать.
+
+REQUIRED FORMAT FOR EACH TRUE A+:
+
+Setup <SYMBOL>:
+Вердикт: LONG / SHORT
+Класс: A+
+
+Вход:
+MARKET: <price or price range> — только пока вход не поздний
+LIMIT: <price or zone>
+
+Стоп:
+SL: <price>
+
+Тейки:
+TP1: <price> — закрыть 33%, SL в б/у
+TP2: <price> — закрыть 33%, SL в б/у
+TP3: <price> — закрыть остаток
+
+Отмена:
+Не входить MARKET, если цена уже <выше/ниже> <price>.
+Отменить идею полностью, если <условие пробоя/закрепления за SL-зоной>.
+
+Причина:
+<1–3 коротких предложения: 4H/1H контекст, 15m/1m вход, почему это именно A+>
+""".strip()
+
+
+async def build_aplus_hunter_archive(
+    settings: Settings,
+    logger: logging.Logger,
+    secret_store: SecretStore,
+    progress_cb: ProgressCallback | None = None,
+    *,
+    top_limit: int = 200,
+    max_candidates: int = 3,
+    score_threshold: float = 85.0,
+) -> Path | None:
+    utc_build_stamp = utc_stamp()
+    scan_stamp = moscow_scan_stamp()
+    created_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+
+    reporter = PercentReporter("A+ Hunter", progress_cb)
+    api_mask = secret_store.load_mexc_api_mask()
+    client = MexcSpotClient(settings.mexc_base_url, logger, settings.mexc_market_type)
+    try:
+        await reporter.report(0, "старт top-200 + forced screener", force=True)
+        ping_ok = await client.ping()
+        server_time = await client.server_time()
+        server_ms = int(server_time["serverTime"])
+
+        await reporter.report(5, "получаю top-200 по ликвидности + forced symbols")
+        top_symbols, top_tickers, forced_report = await _aplus_top200_symbols(client, logger, top_limit)
+        if not top_symbols:
+            await reporter.report(100, "top-200 + forced universe пустой, A+ candidates: 0", force=True)
+            return None
+
+        scored: list[dict[str, Any]] = []
+        total = len(top_symbols)
+        for idx, symbol in enumerate(top_symbols, start=1):
+            try:
+                item = await _aplus_score_symbol(client, symbol, server_ms, logger)
+                scored.append(item)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("A+ Hunter score failed symbol=%s: %s", symbol, exc)
+                scored.append({"symbol": symbol, "score": 0.0, "direction": "WAIT", "error": str(exc)[:300]})
+            if idx % 20 == 0 or idx == total:
+                pct = 5 + (idx / max(1, total)) * 55
+                best_score = max((float(x.get("score", 0.0)) for x in scored), default=0.0)
+                await reporter.report(pct, f"scored {idx}/{total}; best_score={best_score:.1f}")
+
+        scored.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+        candidates = [x for x in scored if float(x.get("score", 0.0)) >= score_threshold][:max_candidates]
+        if not candidates:
+            await reporter.report(100, f"A+ candidates: 0; best_score={float(scored[0].get('score', 0.0)) if scored else 0:.1f}", force=True)
+            return None
+
+        candidate_symbols = [str(x["symbol"]) for x in candidates]
+        await reporter.report(65, f"кандидаты найдены: {candidate_symbols}; строю montage")
+
+        build_dir = settings.work_dir / f"scan_build_{utc_build_stamp}" / "chatgpt_scan_aplus_hunter"
+        safe_rmtree(build_dir)
+        charts_out = build_dir / "charts"
+        meta_out = build_dir / "meta"
+        charts_out.mkdir(parents=True, exist_ok=True)
+        meta_out.mkdir(parents=True, exist_ok=True)
+
+        interval_ms = INTERVAL_MS.get(settings.base_interval, 60_000)
+        window = DownloadWindow.last_days_from_end_ms(settings.days_back, server_ms, interval_ms)
+        exchange_info = await client.exchange_info(candidate_symbols)
+        row_counts: dict[str, int] = {}
+        chart_files: list[str] = []
+        warnings: list[str] = []
+
+        for idx, symbol in enumerate(candidate_symbols, start=1):
+            await reporter.report(65 + (idx - 1) / max(1, len(candidate_symbols)) * 25, f"скачиваю 30d для montage: {symbol}")
+            df = await client.download_klines_dataframe(symbol, settings.base_interval, window)
+            if df.empty:
+                warnings.append(f"{symbol}: empty 30d data, skipped")
+                continue
+            expected_rows = max(1, int((window.end_ms - window.start_ms) // interval_ms))
+            actual_days_by_rows = len(df) * interval_ms / (24 * 60 * 60 * 1000)
+            if len(df) / expected_rows < settings.min_coverage_ratio and actual_days_by_rows < settings.min_effective_days:
+                warnings.append(f"{symbol}: too little 30d coverage, skipped rows={len(df)} expected={expected_rows}")
+                continue
+            row_counts[symbol] = int(len(df))
+            df_ohlcv = _downloaded_df_to_ohlcv_montage(df)
+            task_hint = "A+ Hunter: confirm only true A+. MARKET + LIMIT allowed. If not true A+, answer WAIT."
+            rel = await asyncio.to_thread(create_montage_for_symbol, symbol, df_ohlcv, charts_out, created_msk, task_hint, logger)
+            chart_files.append(rel)
+            await reporter.report(65 + idx / max(1, len(candidate_symbols)) * 25, f"montage готов: {rel}")
+
+        if not chart_files:
+            await reporter.report(100, "кандидаты были, но montage не построен из-за данных; archive skipped", force=True)
+            return None
+
+        await reporter.report(93, "пишу A+ Hunter task/manifest")
+        task_text = _aplus_hunter_task_text(candidate_symbols, created_msk, candidates)
+        (build_dir / "task.txt").write_text(task_text + "\n", encoding="utf-8")
+        write_json(build_dir / "screener_report.json", {
+            "mode": "aplus_hunter",
+            "top_limit": top_limit,
+            "score_threshold": score_threshold,
+            "max_candidates": max_candidates,
+            "candidates": candidates,
+            "top_scored_20": scored[:20],
+            "top_tickers_count": len(top_tickers),
+            "universe_symbols_count": len(top_symbols),
+            "forced_symbols": forced_report,
+            "note": "Screener candidates are hints only. ChatGPT must confirm true A+ from montage/task.txt.",
+        })
+        manifest = {
+            "archive_type": "chatgpt_scan_30d_mexc_futures_aplus_hunter",
+            "collector_version": settings.app_version,
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "created_at_utc_plus_3_msk": created_msk,
+            "telegram_archive_stamp_utc_plus_3": scan_stamp,
+            "exchange": "MEXC_FUTURES_PUBLIC",
+            "base_url": settings.mexc_base_url,
+            "market_type": settings.mexc_market_type,
+            "preset_key": "aplus_hunter",
+            "preset_title": "A+ Hunter",
+            "requested_symbols": candidate_symbols,
+            "symbols": candidate_symbols,
+            "symbol_policy": "exact_only_no_fallback: trade the exact listed symbol only",
+            "aplus_hunter_universe_policy": "top-200 most liquid USDT futures plus forced resolved symbols without duplicates",
+            "forced_symbols": forced_report,
+            "base_interval": settings.base_interval,
+            "days_back": settings.days_back,
+            "download_window": window.as_dict(),
+            "min_coverage_ratio": settings.min_coverage_ratio,
+            "min_effective_days": settings.min_effective_days,
+            "ping_ok": ping_ok,
+            "server_time": server_time,
+            "api_key_saved_mask": api_mask,
+            "row_counts": row_counts,
+            "chart_files_count": len(chart_files),
+            "chart_files": chart_files,
+            "chart_set": {"montage": "one JPG per A+ Hunter candidate: 1D, 4H, 1H, 15m, 1m + info/task panel"},
+            "warnings": warnings,
+            "instruction_files": ["task.txt"],
+            "screener_report_file": "screener_report.json",
+            "answer_rule_for_chatgpt": "Confirm only true A+. If confirmed, return A+ setup with MARKET + LIMIT and anti-chase rule. If not: A+ нет, лучше ещё подождать.",
+            "montage_mode": True,
+            "aplus_hunter": True,
+            "storage_policy": "No parquet/candles are written into A+ Hunter montage archives; downloaded candles are used in memory only to render montage charts.",
+        }
+        write_json(build_dir / "manifest.json", manifest)
+        write_json(meta_out / "exchange_info.json", exchange_info)
+        write_json(meta_out / "api_status.json", {
+            "mexc_futures_public_ping_ok": ping_ok,
+            "mexc_server_time": server_time,
+            "api_key_saved_mask": api_mask,
+            "note": "Market data uses MEXC public futures endpoints. No place_order/cancel_order/trading endpoints exist in this bot.",
+        })
+
+        await reporter.report(98, "упаковываю A+ Hunter zip")
+        zip_path = settings.exports_dir / f"chatgpt_scan-aplus_hunter-{scan_stamp}.zip"
+        zip_directory(build_dir, zip_path)
+        write_json(settings.exports_dir / f"chatgpt_scan-aplus_hunter-{scan_stamp}.sha256.json", {
+            "file": zip_path.name,
+            "sha256": file_sha256(zip_path),
+            "size_bytes": zip_path.stat().st_size,
+            "size_human": human_bytes(zip_path.stat().st_size),
+            "created_at_utc_plus_3_msk": created_msk,
+        })
+        logger.info("A+ Hunter archive ready: %s size=%s", zip_path, human_bytes(zip_path.stat().st_size))
+        await reporter.report(100, f"архив A+ Hunter готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}, candidates={len(candidate_symbols)}", force=True)
+        return zip_path
+    finally:
+        await client.close()
 
 
 async def _build_scan_archive_montage(

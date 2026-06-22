@@ -184,6 +184,17 @@ class MexcSpotClient:
         data = await self._get_json("/api/v3/time")
         return {"serverTime": int(data.get("serverTime")), "source_endpoint": "/api/v3/time", "raw": data}
 
+    async def futures_tickers(self) -> list[dict[str, Any]]:
+        """Return all MEXC Futures tickers from the public contract endpoint."""
+        if self.market_type != "futures":
+            return []
+        data = await self._get_json("/api/v1/contract/ticker")
+        if isinstance(data, dict) and data.get("success") is True and isinstance(data.get("data"), list):
+            return data["data"]
+        if isinstance(data, list):
+            return data
+        raise RuntimeError(f"Unexpected futures ticker response: {str(data)[:500]}")
+
     async def exchange_info(self, symbols: list[str]) -> dict:
         if self.market_type == "binance_spot":
             # Binance supports JSON-encoded symbols parameter, but per-symbol fallback is

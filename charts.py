@@ -127,7 +127,7 @@ def make_charts_for_symbol(symbol: str, candle_path: Path, out_root: Path, logge
     logger.info("Created %s chart files for %s", len(chart_files), symbol)
     return ChartJobResult(chart_files=chart_files, warnings=warnings)
 
-# --- v26 montage-only helpers. Standard v17 chart functions above are unchanged. ---
+# --- v29 montage-only helpers. Standard v17 chart functions above are unchanged. ---
 
 
 def _pillow_montage():

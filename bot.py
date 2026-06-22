@@ -22,7 +22,7 @@ from telegram.ext import (
     filters,
 )
 
-from archive_builder import build_logs_archive, build_scan_archive
+from archive_builder import build_aplus_hunter_archive, build_logs_archive, build_scan_archive
 from config import SCAN_PRESETS, SYMBOL_CANDIDATES, ScanPreset, Settings, load_settings
 from file_utils import human_bytes, safe_rmtree, split_file
 from logging_setup import setup_logging
@@ -35,6 +35,7 @@ BTN_RESET = "reset"
 BTN_PING = "ping"
 BTN_SYMBOLS_CHECK = "symbols_check"
 BTN_MONTAGE = "montage_toggle"
+BTN_APLUS_HUNTER = "aplus_hunter_toggle"
 BTN_SCAN_PREFIX = "scan:"
 
 
@@ -50,6 +51,10 @@ class BotRuntime:
         self.started_at_monotonic = time.monotonic()
         self.started_at_utc = datetime.now(timezone.utc)
         self.montage_enabled = False
+        self.aplus_hunter_enabled = False
+        self.aplus_hunter_task: asyncio.Task | None = None
+        self.aplus_hunter_busy = False
+        self.aplus_status_message_id: int | None = None
 
     def is_admin(self, update: Update) -> bool:
         if self.settings.admin_telegram_id is None:
@@ -60,13 +65,23 @@ class BotRuntime:
     def active_summary(self) -> str:
         if self.active_task and not self.active_task.done():
             return f"идёт задача: {self.active_task_name}"
+        if self.aplus_hunter_busy:
+            return "идёт A+ Hunter круг"
+        if self.aplus_hunter_task and not self.aplus_hunter_task.done() and self.aplus_hunter_enabled:
+            return "A+ Hunter включён, ожидание следующего круга"
         return "фоновых задач нет"
 
     def reset(self) -> None:
         if self.active_task and not self.active_task.done():
             self.active_task.cancel()
+        if self.aplus_hunter_task and not self.aplus_hunter_task.done():
+            self.aplus_hunter_task.cancel()
         self.active_task = None
         self.active_task_name = None
+        self.aplus_hunter_enabled = False
+        self.aplus_hunter_task = None
+        self.aplus_hunter_busy = False
+        self.aplus_status_message_id = None
         self.awaiting_api_step.clear()
         self.secret_store.clear()
         self.montage_enabled = False
@@ -147,6 +162,7 @@ def _custom_preset_from_text(text: str) -> ScanPreset | None:
 
 def main_menu(runtime: BotRuntime | None = None) -> InlineKeyboardMarkup:
     montage_label = f"🧩 Montage: {'ON' if runtime and runtime.montage_enabled else 'OFF'}"
+    aplus_label = f"🎯 A+ Hunter: {'ON' if runtime and runtime.aplus_hunter_enabled else 'OFF'}"
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📊 Gold 30d", callback_data=f"{BTN_SCAN_PREFIX}gold"),
@@ -162,6 +178,9 @@ def main_menu(runtime: BotRuntime | None = None) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(montage_label, callback_data=BTN_MONTAGE),
+            InlineKeyboardButton(aplus_label, callback_data=BTN_APLUS_HUNTER),
+        ],
+        [
             InlineKeyboardButton("⚙️ Symbols check", callback_data=BTN_SYMBOLS_CHECK),
         ],
         [
@@ -224,6 +243,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"- days_back: {runtime.settings.days_back}",
         f"- base_interval: {runtime.settings.base_interval}",
         f"- montage_mode: {'ON' if runtime.montage_enabled else 'OFF'}",
+        f"- aplus_hunter: {'ON' if runtime.aplus_hunter_enabled else 'OFF'}",
         f"- data_root: {runtime.settings.data_root}",
         f"- API: {api_mask['api_key'] if api_mask else 'not set'}",
         "- last exports:",
@@ -289,6 +309,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if data == BTN_MONTAGE:
         runtime.montage_enabled = not runtime.montage_enabled
         await query.message.reply_text(f"Montage переключен: {'ON' if runtime.montage_enabled else 'OFF'}", reply_markup=main_menu(runtime))
+    elif data == BTN_APLUS_HUNTER:
+        await toggle_aplus_hunter(update, context)
     elif data.startswith(BTN_SCAN_PREFIX):
         key = data.removeprefix(BTN_SCAN_PREFIX)
         preset = SCAN_PRESETS.get(key)
@@ -382,20 +404,24 @@ async def start_scan_job(update: Update, context: ContextTypes.DEFAULT_TYPE, pre
     if runtime.active_task and not runtime.active_task.done():
         await reply_with_menu(update, f"Уже {runtime.active_summary()}. Дождись окончания или нажми /reset.", runtime)
         return
+    if runtime.aplus_hunter_busy:
+        await reply_with_menu(update, "Сейчас идёт A+ Hunter круг. Дождись завершения или выключи A+ Hunter.", runtime)
+        return
     chat_id = update.effective_chat.id
+    montage_mode = runtime.montage_enabled
     runtime.active_task_name = f"Scan {preset.title}"
-    runtime.active_task = asyncio.create_task(build_scan_job(context, chat_id, preset))
-    await reply_with_menu(update, f"Scan {preset.title}: запущено. Режим={'montage' if runtime.montage_enabled else 'standard/v17'}. Собираю exact symbol, 1m за 30 дней и графики.", runtime)
+    runtime.active_task = asyncio.create_task(build_scan_job(context, chat_id, preset, montage_mode))
+    await reply_with_menu(update, f"Scan {preset.title}: запущено. Режим={'montage' if montage_mode else 'standard/v17'}. Собираю exact symbol, 1m за 30 дней и графики.", runtime)
 
 
-async def build_scan_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int, preset: ScanPreset) -> None:
+async def build_scan_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int, preset: ScanPreset, montage_mode: bool) -> None:
     runtime: BotRuntime = context.application.bot_data["runtime"]
     try:
         async def progress(msg: str) -> None:
             runtime.logger.info(msg)
             await context.bot.send_message(chat_id=chat_id, text=msg[:3900])
 
-        zip_path = await build_scan_archive(runtime.settings, runtime.logger, runtime.secret_store, preset, progress, montage_mode=runtime.montage_enabled)
+        zip_path = await build_scan_archive(runtime.settings, runtime.logger, runtime.secret_store, preset, progress, montage_mode=montage_mode)
         runtime.last_export = zip_path
         await send_archive_or_parts(context, chat_id, zip_path, runtime)
     except asyncio.CancelledError:
@@ -407,6 +433,156 @@ async def build_scan_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int, prese
     finally:
         runtime.active_task = None
         runtime.active_task_name = None
+
+
+def _format_mmss(seconds: int) -> str:
+    seconds = max(0, int(seconds))
+    minutes, secs = divmod(seconds, 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
+async def _replace_aplus_status(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runtime: BotRuntime, text: str) -> None:
+    if runtime.aplus_status_message_id is not None:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=runtime.aplus_status_message_id)
+        except Exception as exc:  # noqa: BLE001
+            runtime.logger.debug("Could not delete A+ Hunter status message: %s", exc)
+    msg = await context.bot.send_message(chat_id=chat_id, text=text[:3900], reply_markup=main_menu(runtime))
+    runtime.aplus_status_message_id = msg.message_id
+
+
+async def _edit_aplus_status(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runtime: BotRuntime, text: str) -> None:
+    if runtime.aplus_status_message_id is None:
+        await _replace_aplus_status(context, chat_id, runtime, text)
+        return
+    try:
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=runtime.aplus_status_message_id, text=text[:3900], reply_markup=main_menu(runtime))
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.debug("Could not edit A+ Hunter status message: %s", exc)
+
+
+async def _aplus_countdown(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runtime: BotRuntime, base_text: str, seconds: int = 300) -> None:
+    remaining = int(seconds)
+    while remaining > 0 and runtime.aplus_hunter_enabled:
+        await _edit_aplus_status(context, chat_id, runtime, f"{base_text}\n\n⏳ Следующий scan через: {_format_mmss(remaining)}")
+        sleep_for = 15 if remaining > 20 else 5
+        await asyncio.sleep(min(sleep_for, remaining))
+        remaining -= sleep_for
+
+
+async def send_aplus_archive_only(context: ContextTypes.DEFAULT_TYPE, chat_id: int, zip_path: Path, runtime: BotRuntime) -> None:
+    limit_bytes = runtime.settings.telegram_send_limit_mb * 1024 * 1024
+    size = zip_path.stat().st_size
+    if size > limit_bytes:
+        await send_archive_or_parts(context, chat_id, zip_path, runtime)
+        return
+    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+    with zip_path.open("rb") as f:
+        await context.bot.send_document(
+            chat_id=chat_id,
+            document=f,
+            filename=zip_path.name,
+            caption=f"🎯 A+ Hunter archive: {zip_path.name}\nРазмер: {human_bytes(size)}",
+        )
+
+
+async def toggle_aplus_hunter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    query = update.callback_query
+    chat_id = update.effective_chat.id
+    if runtime.aplus_hunter_enabled:
+        runtime.aplus_hunter_enabled = False
+        await _replace_aplus_status(
+            context,
+            chat_id,
+            runtime,
+            "🛑 A+ Hunter: OFF\n\nНовые сканы остановлены. Если текущий montage уже строится, он завершится, но следующий круг не запустится.",
+        )
+        return
+
+    runtime.aplus_hunter_enabled = True
+    await _replace_aplus_status(context, chat_id, runtime, "🎯 A+ Hunter: ON\n\nЗапускаю первый top-200 + forced scan.")
+    if not runtime.aplus_hunter_task or runtime.aplus_hunter_task.done():
+        runtime.aplus_hunter_task = asyncio.create_task(aplus_hunter_loop(context, chat_id))
+
+
+async def aplus_hunter_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    try:
+        while runtime.aplus_hunter_enabled:
+            if runtime.active_task and not runtime.active_task.done():
+                await _replace_aplus_status(
+                    context,
+                    chat_id,
+                    runtime,
+                    f"🎯 A+ Hunter: ON\n\nПауза: сейчас {runtime.active_summary()}.\nA+ Hunter продолжит после освобождения бота.",
+                )
+                await _aplus_countdown(context, chat_id, runtime, "🎯 A+ Hunter: ожидание свободного слота", 60)
+                continue
+
+            runtime.aplus_hunter_busy = True
+            await _replace_aplus_status(
+                context,
+                chat_id,
+                runtime,
+                "🔎 A+ Hunter scan...\n\nTop-200 + forced symbols\nСтатус: ищу A+ candidates",
+            )
+
+            async def progress(msg: str) -> None:
+                runtime.logger.info(msg)
+                await _edit_aplus_status(context, chat_id, runtime, f"🔎 A+ Hunter scan...\n\n{msg}")
+
+            zip_path: Path | None = None
+            try:
+                zip_path = await build_aplus_hunter_archive(runtime.settings, runtime.logger, runtime.secret_store, progress)
+                runtime.last_export = zip_path or runtime.last_export
+            except Exception as exc:  # noqa: BLE001
+                runtime.logger.exception("A+ Hunter failed: %s", exc)
+                runtime.aplus_hunter_busy = False
+                await _replace_aplus_status(
+                    context,
+                    chat_id,
+                    runtime,
+                    f"⚠️ A+ Hunter error.\n\nПричина: {exc}\n\nПовтор будет после паузы, если A+ Hunter ON.",
+                )
+                await _aplus_countdown(context, chat_id, runtime, "⚠️ A+ Hunter error. Жду перед повтором.", 300)
+                continue
+            finally:
+                runtime.aplus_hunter_busy = False
+
+            if not runtime.aplus_hunter_enabled:
+                break
+
+            if zip_path is None:
+                base = "✅ Scan завершён.\n\nA+ candidates: 0\nЛучше подождать."
+                await _replace_aplus_status(context, chat_id, runtime, base)
+                await _aplus_countdown(context, chat_id, runtime, base, 300)
+                continue
+
+            await _replace_aplus_status(
+                context,
+                chat_id,
+                runtime,
+                f"✅ A+ Hunter archive готов.\n\nФайл: {zip_path.name}\nОтправляю архив в чат.",
+            )
+            await send_aplus_archive_only(context, chat_id, zip_path, runtime)
+            if not runtime.aplus_hunter_enabled:
+                break
+            base = (
+                "✅ Архив отправлен.\n\n"
+                "Закинь этот архив в ChatGPT.\n"
+                "Если A+ подтвердится — получишь setup.\n"
+                "Если нет — A+ нет, лучше ещё подождать."
+            )
+            await _replace_aplus_status(context, chat_id, runtime, base)
+            await _aplus_countdown(context, chat_id, runtime, base, 300)
+    except asyncio.CancelledError:
+        runtime.logger.warning("A+ Hunter loop cancelled")
+    finally:
+        runtime.aplus_hunter_busy = False
+        if not runtime.aplus_hunter_enabled:
+            runtime.aplus_hunter_task = None
+
 
 
 async def handle_symbols_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

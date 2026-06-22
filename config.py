@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-APP_VERSION = "v26_full"
+APP_VERSION = "v29_full_aplus_hunter_dedupe_fix"
 
 
 @dataclass(frozen=True)

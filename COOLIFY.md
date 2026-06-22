@@ -1,4 +1,4 @@
-# Coolify deploy — ChatGPT Scan Bot 30d v26_full
+# Coolify deploy — ChatGPT Scan Bot 30d v29_full_aplus_hunter_dedupe_fix
 
 ## Required env
 
@@ -19,7 +19,7 @@ SECRET_ENCRYPTION_KEY=
 2. Open Telegram.
 3. Send `/start`.
 4. The latest message will contain the current button panel at the bottom of the chat.
-5. Press `/ping`; expected version: `v26_full`.
+5. Press `/ping`; expected version: `v29_full_aplus_hunter_dedupe_fix`.
 6. Press a scan button, for example `📊 Gold 30d`, or send a text symbol like `xrp` for a custom exact-symbol archive.
 
 ## Output
@@ -52,7 +52,7 @@ If MEXC rate-limits or returns “too frequent”, the bot increases pause and r
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## v26_full update
+## v29_full_aplus_hunter_dedupe_fix update
 - Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
 - Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
 - Removed confusing exact-candidate remapping in archive resolution.
@@ -60,20 +60,30 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
 
 
-## v26_full update
-- Version is now `v26_full`.
+## v29_full_aplus_hunter_dedupe_fix update
+- Version is now `v29_full_aplus_hunter_dedupe_fix`.
 - Generated setup headers are `Setup Gold / XAU:`, `Setup Silver / XAG:`, and `Setup Oil / WTI:`.
 - Setup templates do not include a separate `Актив:` line.
 
 
-## v26_full format note
+## v29_full_aplus_hunter_dedupe_fix format note
 - Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
 - Limit orders and TP1/TP2/TP3 are written in a column.
 
-## v26_full TP compact format note
+## v29_full_aplus_hunter_dedupe_fix TP compact format note
 - Setup output embeds TP management directly into TP1/TP2/TP3 lines.
 - Separate `Сопровождение:` section is removed.
 
-## v26_full update
+## v29_full_aplus_hunter_dedupe_fix update
 - Setup output format is now strict vertical format inside one markdown `txt` code block.
 - This prevents ChatGPT from merging LIMIT and TP lines into one paragraph.
+
+## v29_full_aplus_hunter_dedupe_fix update
+- Added separate `🎯 A+ Hunter: ON/OFF` toggle.
+- The hunter loop is sequential: scan/build/send must finish, then the 05:00 timer starts.
+- Existing scan buttons and their task files are unchanged.
+
+
+## v29_full_aplus_hunter_dedupe_fix update
+- A+ Hunter universe now adds forced symbols to top-200 without duplicates.
+- Existing scan buttons and existing task texts are unchanged.
