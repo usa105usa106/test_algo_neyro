@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-APP_VERSION = "v33_full"
+APP_VERSION = "v35_full"
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,8 @@ class Settings:
     mexc_market_type: str
     min_coverage_ratio: float
     min_effective_days: float
+    intraday_scan_interval_sec: int
+    intraday_days_back: int
     secret_encryption_key: str | None
     app_version: str
 
@@ -115,6 +117,8 @@ def load_settings() -> Settings:
         mexc_market_type="futures",
         min_coverage_ratio=float(os.getenv("MIN_COVERAGE_RATIO", "0.80")),
         min_effective_days=float(os.getenv("MIN_EFFECTIVE_DAYS", "20")),
+        intraday_scan_interval_sec=int(os.getenv("INTRADAY_SCAN_INTERVAL_SEC", "300")),
+        intraday_days_back=max(30, int(os.getenv("INTRADAY_DAYS_BACK", "30"))),
         secret_encryption_key=os.getenv("SECRET_ENCRYPTION_KEY", "").strip() or None,
         app_version=APP_VERSION,
     )
