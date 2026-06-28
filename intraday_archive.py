@@ -16,37 +16,42 @@ from intraday_engine import IntradayReport, resample_ohlcv
 def _task_text(created_msk: str, candidates: list[IntradayReport]) -> str:
     symbols = ", ".join(r.symbol for r in candidates)
     return f"""INTRADAY_TASK:
-Analyze this archive as INTRADAY MANUAL_REVIEW candidates.
 Archive created: {created_msk} UTC+3/MSK
 Symbols: {symbols}
 
-IMPORTANT:
-- This is not old standard scan mode, not montage swing mode, not A+ Hunter.
-- Intraday uses fresh downloaded candles for the scan; no parquet/cache assumptions.
-- Use the bot report only as a first filter. Confirm manually from montage 1m/15m/1h/4h/1D.
-- Data sanity is mandatory: compare report.json levels with montage/CSV. If DATA_WARNING exists or chart/data levels disagree materially, do not give a trade.
-- Candidates in this archive are already sorted by bot quality_score, strongest first, but you must re-check them manually.
-- In the final answer, always rank setups by your own intraday strength: best setup first, then weaker setups in descending order.
-- If the archive order and your manual ranking differ, explicitly say which setup is strongest and why.
-- Do not force a trade. If the candidate is weak, answer WAIT / NO TRADE.
-- MAXIMUM ONE real tradable setup per archive. If there is no clean Intraday A, say no trade.
-- B / B+ / A- are NOT tradable classes. They must be WAIT / observation only.
-- A real setup requires Intraday A quality only: clear regime, clear location, confirmation, acceptable RR, and no obvious stop magnet.
-- Entry must be LIMIT only. If only MARKET would work, answer WAIT / missed entry.
-- Do NOT give passive limit orders only because price is near a zone. If confirmation is missing, answer WAIT_CONFIRMATION.
-- Entry must be based on location plus confirmation: pullback rejection, sweep confirmation, or range-edge rejection/hold.
-- Do not chase after impulse.
-- Avoid long near 24h high after pump and short near 24h low after dump.
-- Stop must be outside structure/noise, not inside normal 15m noise.
-- Reject setups where the stop is immediately behind an obvious high/low/liquidity magnet. Use a wider structural stop, or answer WAIT if RR becomes bad.
-- If the regime recently flipped (TREND_LONG ↔ TREND_SHORT) or looks transitional, answer WAIT until a stable follow-up scan confirms it.
+Analyze ONLY this archive data: montage, CSV candles, report.json/status/manifest. Do not use previous conversation memory, previous archive conclusions, old setups, or assumptions from other scans.
+This is only Intraday mode. Do not use old standard scan / A+ Hunter / montage task rules.
 
-Return in Russian.
-For each candidate, give one of:
-1) at most one precise Intraday A setup with Entry / Stop / TP1 / TP2 / TP3 / cancellation; or
-2) WAIT_CONFIRMATION if a zone is interesting but needs 5m/15m rejection/hold; or
-3) WAIT / NO_TRADE with short reason.
-Start with the strongest valid intraday setup. If no valid Intraday A exists, say WAIT / NO_TRADE and rank the rejects by closest-to-valid first.
+Answer in Russian, briefly, without extra talk.
+Final answer format:
+- Start with either **WAIT — observation only, no entry** or **Intraday A**.
+- If WAIT, still give an observation setup/zone, but clearly mark that there is no entry now.
+- If Intraday A, give only one real tradable setup from the archive. Maximum one real setup per archive.
+- Use LIMIT only. No MARKET. If MARKET would be needed, answer WAIT / missed.
+- Write Entry/Limit, Stop, TP1, TP2, TP3 numbers in bold.
+- If a zone is a range, give one exact midpoint number. Example: entry zone 4070-4080 => **4075**. TP range 4060-4050 => TP1 **4055**.
+- End with only 1-3 short sentences explaining why.
+
+Decision rules:
+- Real trade only if clean Intraday A: clear regime + clear location + confirmation/rejection/hold + acceptable RR + no obvious stop magnet.
+- B / B+ / A- are WAIT only, not tradable.
+- If confirmation is missing, answer **WAIT — observation only, no entry** and write WAIT_CONFIRMATION.
+- Do not place passive limit orders just because price is near a zone. Need 5m/15m rejection/hold or sweep confirmation.
+- Reject if report/montage/CSV materially disagree or DATA_WARNING exists.
+- Reject if trend just flipped or is transitional.
+- Reject if stop is immediately behind obvious high/low/liquidity magnet; widen structurally or WAIT if RR becomes bad.
+- Do not chase after impulse. If target/low/high was reached before entry, setup is missed.
+
+Compact template:
+**WAIT — observation only, no entry** / **Intraday A**
+Setup <symbol>: LONG LIMIT / SHORT LIMIT / WAIT_CONFIRMATION
+Entry: **...**
+Stop: **...**
+TP1: **...** — 33% + BE
+TP2: **...** — 33% + BE
+TP3: **...** — остаток
+Cancel: ...
+Why: 1-3 short sentences.
 """.strip()
 
 
@@ -151,7 +156,7 @@ def build_intraday_candidates_archive(
         "chart_files": chart_files,
         "candle_files": candle_files,
         "instruction_files": ["intraday_task.txt", "status.txt", "reports/*/report.json"],
-        "answer_rule_for_chatgpt": "Confirm or reject intraday candidates. Maximum one real setup per archive, Intraday A only. B/B+/A- => WAIT. LIMIT entries only. Require confirmation/rejection and reject obvious stop magnets.",
+        "answer_rule_for_chatgpt": "Use only this archive data. Brief Russian answer. Maximum one real setup per archive, Intraday A only; B/B+/A- => WAIT observation only. LIMIT only. Bold Entry/Stop/TP numbers. Use midpoint for ranges. Require 5m/15m rejection/hold; reject DATA_WARNING and obvious stop magnets.",
         "storage_policy": "One zip per scan with all green MANUAL_REVIEW candidates only. Fresh 30d download in memory; no parquet/cache is used by Intraday.",
     }
     write_json(build_dir / "manifest.json", manifest)
