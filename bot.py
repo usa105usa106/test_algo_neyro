@@ -8,6 +8,7 @@ import re
 import time
 import zipfile
 from datetime import datetime, timezone, timedelta
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -48,11 +49,12 @@ INTRADAY_DEFAULT_SYMBOLS = ["BTC_USDT", "ETH_USDT", "XAU_USDT", "SILVER_USDT", "
 
 _INTRADAY_DECISION_ORDER = {
     "MANUAL_REVIEW": 0,
-    "WAIT_PULLBACK": 1,
-    "WAIT_SWEEP_CONFIRMATION": 2,
-    "WAIT_EDGE": 3,
-    "WAIT": 4,
-    "NO_TRADE": 5,
+    "WAIT_CONFIRMATION": 1,
+    "WAIT_PULLBACK": 2,
+    "WAIT_SWEEP_CONFIRMATION": 3,
+    "WAIT_EDGE": 4,
+    "WAIT": 5,
+    "NO_TRADE": 6,
 }
 
 
@@ -94,6 +96,7 @@ class BotRuntime:
         self.intraday_last_signature: str | None = None
         self.intraday_last_archive_sent_at: float = 0.0
         self.intraday_symbols: list[str] = list(INTRADAY_DEFAULT_SYMBOLS)
+        self.intraday_regime_state: dict[str, dict[str, Any]] = {}
 
     def is_admin(self, update: Update) -> bool:
         if self.settings.admin_telegram_id is None:
@@ -136,6 +139,7 @@ class BotRuntime:
         self.intraday_last_signature = None
         self.intraday_last_archive_sent_at = 0.0
         self.intraday_symbols = list(INTRADAY_DEFAULT_SYMBOLS)
+        self.intraday_regime_state.clear()
         self.awaiting_api_step.clear()
         self.secret_store.clear()
         self.montage_enabled = False
@@ -475,6 +479,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             runtime.intraday_symbols = symbols
             runtime.intraday_last_signature = None
             runtime.intraday_last_archive_sent_at = 0.0
+            runtime.intraday_regime_state.clear()
             runtime.logger.info("Intraday symbols command action=%s symbols=%s", action, symbols)
             if action == "reset":
                 await reply_with_menu(update, f"Intraday список сброшен по умолчанию: {_symbols_short_list(runtime.intraday_symbols)}", runtime)
@@ -934,6 +939,65 @@ def _intraday_error_report(symbol: str, exc: Exception) -> IntradayReport:
         archive_reason=None,
     )
 
+
+
+def _opposite_intraday_trend(a: str | None, b: str | None) -> bool:
+    return {a, b} == {"TREND_LONG", "TREND_SHORT"}
+
+
+def _transition_report(report: IntradayReport, previous: str | None, pending_count: int) -> IntradayReport:
+    return replace(
+        report,
+        regime="TRANSITION",
+        allowed_direction="WAIT",
+        decision="WAIT",
+        playbook="none",
+        quality_score=0,
+        archive_reason=None,
+        comment=(
+            f"Режим меняется: было {previous or 'n/a'}, сейчас {report.regime}. "
+            f"Нужно 2 скана подряд для подтверждения смены ({pending_count}/2). Сделку не открывать."
+        ),
+    )
+
+
+def _apply_intraday_hysteresis(runtime: BotRuntime, report: IntradayReport) -> IntradayReport:
+    """Prevent direct TREND_LONG <-> TREND_SHORT flips between 5m scans.
+
+    A raw opposite trend is downgraded to TRANSITION/WAIT until the same new trend
+    appears in two consecutive scans. This keeps Intraday from changing direction
+    on one noisy candle. State is runtime-only and affects only Intraday.
+    """
+    raw_regime = str(report.regime or "")
+    symbol = str(report.symbol or "")
+    state = runtime.intraday_regime_state.get(symbol, {"stable": None, "pending": None, "count": 0})
+    stable = state.get("stable")
+
+    if raw_regime not in {"TREND_LONG", "TREND_SHORT"}:
+        # Keep the last stable trend in memory through TRANSITION/RANGE/CHOP so a later
+        # opposite trend still needs confirmation instead of flipping immediately.
+        next_stable = stable if stable in {"TREND_LONG", "TREND_SHORT"} else raw_regime
+        runtime.intraday_regime_state[symbol] = {"stable": next_stable, "pending": None, "count": 0}
+        return report
+
+    if stable in {None, raw_regime} or stable not in {"TREND_LONG", "TREND_SHORT"}:
+        runtime.intraday_regime_state[symbol] = {"stable": raw_regime, "pending": None, "count": 0}
+        return report
+
+    if _opposite_intraday_trend(stable, raw_regime):
+        pending = state.get("pending")
+        count = int(state.get("count") or 0) + 1 if pending == raw_regime else 1
+        if count < 2:
+            runtime.intraday_regime_state[symbol] = {"stable": stable, "pending": raw_regime, "count": count}
+            runtime.logger.info("Intraday hysteresis transition symbol=%s stable=%s raw=%s count=%s", symbol, stable, raw_regime, count)
+            return _transition_report(report, stable, count)
+        runtime.intraday_regime_state[symbol] = {"stable": raw_regime, "pending": None, "count": 0}
+        runtime.logger.info("Intraday hysteresis confirmed new trend symbol=%s stable=%s", symbol, raw_regime)
+        return report
+
+    runtime.intraday_regime_state[symbol] = {"stable": raw_regime, "pending": None, "count": 0}
+    return report
+
 def _intraday_status_text(reports: list[Any], created_msk: str, symbols: list[str], archive_name: str | None = None) -> str:
     green = [r for r in reports if getattr(r, "is_green", False)]
     yellow = [r for r in reports if getattr(r, "color_emoji", "") == "🟡"]
@@ -1189,9 +1253,14 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
                     ),
                 )
                 report, df_1m, frames = analyze_intraday_symbol(symbol, df)
+                raw_regime = report.regime
+                raw_decision = report.decision
+                report = _apply_intraday_hysteresis(runtime, report)
                 runtime.logger.info(
-                    "Intraday report symbol=%s regime=%s decision=%s playbook=%s green=%s buyer=%s seller=%s trap=%s late=%s comment=%s",
+                    "Intraday report symbol=%s raw_regime=%s raw_decision=%s regime=%s decision=%s playbook=%s green=%s buyer=%s seller=%s trap=%s late=%s data_warning=%s comment=%s",
                     report.symbol,
+                    raw_regime,
+                    raw_decision,
                     report.regime,
                     report.decision,
                     report.playbook,
@@ -1200,6 +1269,7 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
                     report.seller_pressure,
                     report.trap_risk,
                     report.late_risk,
+                    getattr(report, "data_warning", False),
                     report.comment,
                 )
                 reports.append(report)

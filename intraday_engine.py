@@ -150,6 +150,52 @@ def _structure_score(df: pd.DataFrame, direction: str) -> int:
     return int(_clamp(-norm_slope * 30 + (15 if ll else 0) + (15 if lh else 0), 0, 40))
 
 
+def _rejection_confirmation(df_1m: pd.DataFrame, df_15m: pd.DataFrame, direction: str, vwap: float) -> bool:
+    """Lightweight confirmation gate for Intraday MANUAL_REVIEW.
+
+    It prevents passive limit ideas from being promoted to green just because price is
+    near a zone. A green candidate must show at least a small rejection/hold on
+    closed 1m/15m candles. Otherwise the decision stays WAIT_CONFIRMATION.
+    """
+    if df_1m.empty or df_15m.empty or not np.isfinite(vwap):
+        return False
+    recent_1m = df_1m.tail(10)
+    last15 = df_15m.iloc[-1]
+    rng15 = float(last15["High"] - last15["Low"])
+    if rng15 <= 0 or not np.isfinite(rng15):
+        return False
+    body_top = float(max(last15["Open"], last15["Close"]))
+    body_bottom = float(min(last15["Open"], last15["Close"]))
+    upper_wick = float(last15["High"] - body_top) / rng15
+    lower_wick = float(body_bottom - last15["Low"]) / rng15
+    close = float(last15["Close"])
+    open_ = float(last15["Open"])
+
+    if direction == "short":
+        touched_zone = bool(last15["High"] >= vwap or recent_1m["High"].max() >= vwap)
+        red_or_below = close < open_ or close < vwap
+        return touched_zone and red_or_below and (upper_wick >= 0.20 or close < vwap)
+
+    touched_zone = bool(last15["Low"] <= vwap or recent_1m["Low"].min() <= vwap)
+    green_or_above = close > open_ or close > vwap
+    return touched_zone and green_or_above and (lower_wick >= 0.20 or close > vwap)
+
+
+def _data_tolerance(symbol: str, price: float) -> float:
+    base = symbol.upper().replace("_USDT", "")
+    if base in {"XAU", "GOLD"}:
+        return 1.0
+    if base in {"USOIL", "OIL"}:
+        return 0.05
+    if base == "SILVER":
+        return 0.02
+    if base == "BTC":
+        return max(5.0, price * 0.00015)
+    if base == "ETH":
+        return max(0.5, price * 0.0002)
+    return max(1e-8, abs(price) * 0.0002)
+
+
 @dataclass(frozen=True)
 class IntradayReport:
     symbol: str
@@ -177,6 +223,18 @@ class IntradayReport:
     distance_to_24h_low_pct: float
     comment: str
     archive_reason: str | None = None
+    day_high_msk: float = float("nan")
+    day_low_msk: float = float("nan")
+    rolling_24h_high: float = float("nan")
+    rolling_24h_low: float = float("nan")
+    visible_1m_high: float = float("nan")
+    visible_1m_low: float = float("nan")
+    visible_15m_high: float = float("nan")
+    visible_15m_low: float = float("nan")
+    data_warning: bool = False
+    data_warning_reason: str | None = None
+    session_age_min: int = 0
+    low_liquidity_session: bool = False
 
     @property
     def is_green(self) -> bool:
@@ -207,6 +265,8 @@ class IntradayReport:
             f"Rank score: {self.quality_score}\n"
             f"Сценарий: {self.playbook}\n"
             f"Комментарий: {self.comment}"
+            + (f"\nDATA_WARNING: {self.data_warning_reason}" if self.data_warning else "")
+            + ("\nSESSION_WARNING: first MSK hour / low-liquidity gate" if self.low_liquidity_session else "")
         )
 
 
@@ -258,12 +318,41 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     day_df = df_1m[df_1m.index >= day_start_utc]
     if day_df.empty:
         day_df = df_1m.tail(24 * 60)
+    session_age_min = int(max(0, (latest_msk - day_start_msk).total_seconds() // 60))
+    low_liquidity_session = session_age_min < 60
     day_open = float(day_df["Open"].iloc[0])
     day_high = float(day_df["High"].max())
     day_low = float(day_df["Low"].min())
-    high_24h = float(frames["1m"]["High"].max())
-    low_24h = float(frames["1m"]["Low"].min())
+    # One source of truth: all levels come from normalized 1m candles.
+    # The montage can show different windows (1m last 24h, 15m last ~7d), so report
+    # stores these levels separately instead of mixing them. DATA_WARNING compares
+    # only the SAME 24h window after resampling, not 24h vs visible 7d chart lows.
+    visible_1m = frames["1m"]
+    visible_15m = df_15m[df_15m.index >= latest_ts - pd.Timedelta(days=7)]
+    if visible_15m.empty:
+        visible_15m = df_15m
+    high_24h = float(visible_1m["High"].max())
+    low_24h = float(visible_1m["Low"].min())
+    visible_1m_high = high_24h
+    visible_1m_low = low_24h
+    visible_15m_high = float(visible_15m["High"].max()) if not visible_15m.empty else high_24h
+    visible_15m_low = float(visible_15m["Low"].min()) if not visible_15m.empty else low_24h
     vwap = _vwap(day_df)
+
+    tolerance = _data_tolerance(symbol, price)
+    data_warning_reason = None
+    check_15m_24h = resample_ohlcv(visible_1m, "15min")
+    if not check_15m_24h.empty:
+        check_15m_24h_high = float(check_15m_24h["High"].max())
+        check_15m_24h_low = float(check_15m_24h["Low"].min())
+        if abs(high_24h - check_15m_24h_high) > tolerance or abs(low_24h - check_15m_24h_low) > tolerance:
+            data_warning_reason = (
+                f"same-window 1m/15m 24h high/low mismatch: "
+                f"1m_24h={_fmt(high_24h)}/{_fmt(low_24h)} "
+                f"15m_from_1m_24h={_fmt(check_15m_24h_high)}/{_fmt(check_15m_24h_low)} "
+                f"tolerance={_fmt(tolerance)}"
+            )
+    data_warning = data_warning_reason is not None
 
     buyer, seller, absorption = _pressure_scores(df_1m, df_15m, vwap)
     atr15 = _atr(df_15m, 14)
@@ -321,14 +410,17 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     short_score = int(_clamp(short_score))
 
     range_width_pct = _safe_pct(day_high, day_low)
+    score_gap = abs(long_score - short_score)
     if sweep_up or sweep_down:
         regime = "SWEEP"
-    elif long_score >= 65 and long_score >= short_score + 15:
+    elif long_score >= 70 and long_score >= short_score + 20:
         regime = "TREND_LONG"
-    elif short_score >= 65 and short_score >= long_score + 15:
+    elif short_score >= 70 and short_score >= long_score + 20:
         regime = "TREND_SHORT"
-    elif trap_risk >= 75 or abs(long_score - short_score) <= 10:
-        regime = "CHOP" if range_width_pct < max(0.3, atr_pct * 5) or trap_risk >= 75 else "RANGE"
+    elif score_gap <= 15:
+        regime = "TRANSITION"
+    elif trap_risk >= 75:
+        regime = "CHOP"
     else:
         regime = "RANGE"
 
@@ -339,16 +431,27 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     archive_reason = None
 
     near_vwap = abs(dist_vwap_pct) <= max(0.08, atr_pct * 0.5)
-    pullback_ok_long = regime == "TREND_LONG" and near_vwap and buyer >= seller + 10 and trap_risk < 65 and late_risk < 55
-    pullback_ok_short = regime == "TREND_SHORT" and near_vwap and seller >= buyer + 10 and trap_risk < 65 and late_risk < 55
+    strict_trap_ok = trap_risk <= 35
+    strict_late_ok = late_risk <= 35
+    long_pressure_edge = buyer - seller
+    short_pressure_edge = seller - buyer
+    long_confirmed = _rejection_confirmation(df_1m, df_15m, "long", vwap)
+    short_confirmed = _rejection_confirmation(df_1m, df_15m, "short", vwap)
+    pullback_watch_long = regime == "TREND_LONG" and near_vwap and long_score >= 70 and long_pressure_edge >= 8 and trap_risk <= 45 and late_risk <= 45
+    pullback_watch_short = regime == "TREND_SHORT" and near_vwap and short_score >= 70 and short_pressure_edge >= 8 and trap_risk <= 45 and late_risk <= 45
+    pullback_ok_long = pullback_watch_long and long_score >= 75 and long_score >= short_score + 25 and strict_trap_ok and strict_late_ok and long_confirmed and not data_warning
+    pullback_ok_short = pullback_watch_short and short_score >= 75 and short_score >= long_score + 25 and strict_trap_ok and strict_late_ok and short_confirmed and not data_warning
 
     if regime == "TREND_LONG":
         allowed = "LONG_ONLY"
         playbook = "Trend Pullback"
         if pullback_ok_long:
             decision = "MANUAL_REVIEW"
-            comment = f"Лонг по тренду после отката к VWAP/зоне, buyers сильнее, late риск не высокий. Цена {_fmt(price)}."
-            archive_reason = "Trend Pullback LONG созрел для ручной проверки"
+            comment = f"Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена {_fmt(price)}."
+            archive_reason = "Intraday A Trend Pullback LONG для ручной проверки"
+        elif pullback_watch_long:
+            decision = "WAIT_CONFIRMATION"
+            comment = "Лонг-сценарий есть, но подтверждения недостаточно. Ордер заранее не ставить: ждать 5m/15m rejection/hold."
         else:
             decision = "WAIT_PULLBACK"
             comment = "Лонг-направление есть, но вход сейчас не созрел/может быть поздним. Ждать откат и подтверждение."
@@ -357,8 +460,11 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         playbook = "Trend Pullback"
         if pullback_ok_short:
             decision = "MANUAL_REVIEW"
-            comment = f"Шорт по тренду после отката к VWAP/зоне, sellers сильнее, late риск не высокий. Цена {_fmt(price)}."
-            archive_reason = "Trend Pullback SHORT созрел для ручной проверки"
+            comment = f"Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена {_fmt(price)}."
+            archive_reason = "Intraday A Trend Pullback SHORT для ручной проверки"
+        elif pullback_watch_short:
+            decision = "WAIT_CONFIRMATION"
+            comment = "Шорт-сценарий есть, но подтверждения недостаточно. Ордер заранее не ставить: ждать 5m/15m rejection/hold."
         else:
             decision = "WAIT_PULLBACK"
             comment = "Шорт-направление есть, но вход сейчас не созрел/может быть поздним. Ждать откат и подтверждение."
@@ -366,35 +472,43 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         playbook = "Sweep Reversal"
         if sweep_down:
             allowed = "LONG_ONLY_AFTER_CONFIRMATION"
-            if buyer >= seller and trap_risk < 75:
+            if buyer >= seller + 10 and trap_risk <= 35 and late_risk <= 35 and long_confirmed and not data_warning:
                 decision = "MANUAL_REVIEW"
-                comment = "Сняли low и вернули цену обратно. Проверить лонг после подтверждения возврата."
-                archive_reason = "Sweep down reversal для ручной проверки"
+                comment = "Sweep down Intraday A: low сняли, цена вернулась, выкуп подтверждён. Проверить только LIMIT после подтверждения."
+                archive_reason = "Intraday A Sweep down reversal для ручной проверки"
             else:
                 decision = "WAIT_SWEEP_CONFIRMATION"
-                comment = "Похоже на sweep вниз, но выкуп ещё слабый. Ждать закрытие/закрепление."
+                comment = "Похоже на sweep вниз, но подтверждения ещё мало. Ордер заранее не ставить, ждать закрытие/закрепление."
         elif sweep_up:
             allowed = "SHORT_ONLY_AFTER_CONFIRMATION"
-            if seller >= buyer and trap_risk < 75:
+            if seller >= buyer + 10 and trap_risk <= 35 and late_risk <= 35 and short_confirmed and not data_warning:
                 decision = "MANUAL_REVIEW"
-                comment = "Сняли high и вернули цену обратно. Проверить шорт после подтверждения возврата."
-                archive_reason = "Sweep up reversal для ручной проверки"
+                comment = "Sweep up Intraday A: high сняли, цена вернулась, продавец подтверждён. Проверить только LIMIT после подтверждения."
+                archive_reason = "Intraday A Sweep up reversal для ручной проверки"
             else:
                 decision = "WAIT_SWEEP_CONFIRMATION"
-                comment = "Похоже на sweep вверх, но продавец ещё слабый. Ждать закрытие/закрепление."
+                comment = "Похоже на sweep вверх, но подтверждения ещё мало. Ордер заранее не ставить, ждать закрытие/закрепление."
+    elif regime == "TRANSITION":
+        allowed = "WAIT"
+        playbook = "none"
+        decision = "WAIT"
+        comment = "Переходный режим: long/short scores близко или тренд меняется. Сделку не открывать, ждать подтверждение."
     elif regime == "RANGE":
         allowed = "BOTH_FROM_EDGES"
         playbook = "Range Edge"
         edge_low = dist_low_pct <= max(0.12, atr_pct * 0.8)
         edge_high = dist_high_pct <= max(0.12, atr_pct * 0.8)
-        if edge_low and buyer >= seller + 10 and trap_risk < 65:
+        if edge_low and buyer >= seller + 15 and trap_risk <= 35 and late_risk <= 35 and long_confirmed and not data_warning:
             decision = "MANUAL_REVIEW"
-            comment = "Цена у нижнего края диапазона, есть выкуп. Проверить range-long вручную."
-            archive_reason = "Range Edge LONG созрел для ручной проверки"
-        elif edge_high and seller >= buyer + 10 and trap_risk < 65:
+            comment = "Range Edge Intraday A: нижний край диапазона + подтверждённый выкуп. Проверить range-long вручную."
+            archive_reason = "Intraday A Range Edge LONG для ручной проверки"
+        elif edge_high and seller >= buyer + 15 and trap_risk <= 35 and late_risk <= 35 and short_confirmed and not data_warning:
             decision = "MANUAL_REVIEW"
-            comment = "Цена у верхнего края диапазона, есть продавец. Проверить range-short вручную."
-            archive_reason = "Range Edge SHORT созрел для ручной проверки"
+            comment = "Range Edge Intraday A: верхний край диапазона + подтверждённый продавец. Проверить range-short вручную."
+            archive_reason = "Intraday A Range Edge SHORT для ручной проверки"
+        elif edge_low or edge_high:
+            decision = "WAIT_CONFIRMATION"
+            comment = "Цена у края диапазона, но подтверждения недостаточно. Ордер заранее не ставить, ждать rejection/hold."
         else:
             decision = "WAIT_EDGE"
             comment = "Диапазон. В середине не торговать, ждать верх/низ диапазона."
@@ -403,6 +517,16 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         playbook = "none"
         decision = "NO_TRADE"
         comment = "Грязная пила/ловушка. Нет нормального преимущества."
+
+    if data_warning and decision == "MANUAL_REVIEW":
+        decision = "WAIT"
+        archive_reason = None
+        comment = f"DATA_WARNING: {data_warning_reason}. Архив можно смотреть, но сделку не давать до проверки данных."
+
+    if low_liquidity_session and decision == "MANUAL_REVIEW":
+        decision = "WAIT_CONFIRMATION"
+        archive_reason = None
+        comment = f"Первый час MSK-сессии ({session_age_min} мин): high/low дня ещё нестабильны, возможны выносы. Ордер заранее не ставить, ждать следующий стабильный скан/rejection."
 
     if decision == "MANUAL_REVIEW":
         if "LONG" in allowed:
@@ -453,5 +577,17 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         distance_to_24h_low_pct=dist_low_pct,
         comment=comment,
         archive_reason=archive_reason,
+        day_high_msk=day_high,
+        day_low_msk=day_low,
+        rolling_24h_high=high_24h,
+        rolling_24h_low=low_24h,
+        visible_1m_high=visible_1m_high,
+        visible_1m_low=visible_1m_low,
+        visible_15m_high=visible_15m_high,
+        visible_15m_low=visible_15m_low,
+        data_warning=data_warning,
+        data_warning_reason=data_warning_reason,
+        session_age_min=session_age_min,
+        low_liquidity_session=low_liquidity_session,
     )
     return report, df_1m, frames

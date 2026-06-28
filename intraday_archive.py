@@ -24,21 +24,29 @@ IMPORTANT:
 - This is not old standard scan mode, not montage swing mode, not A+ Hunter.
 - Intraday uses fresh downloaded candles for the scan; no parquet/cache assumptions.
 - Use the bot report only as a first filter. Confirm manually from montage 1m/15m/1h/4h/1D.
+- Data sanity is mandatory: compare report.json levels with montage/CSV. If DATA_WARNING exists or chart/data levels disagree materially, do not give a trade.
 - Candidates in this archive are already sorted by bot quality_score, strongest first, but you must re-check them manually.
 - In the final answer, always rank setups by your own intraday strength: best setup first, then weaker setups in descending order.
 - If the archive order and your manual ranking differ, explicitly say which setup is strongest and why.
 - Do not force a trade. If the candidate is weak, answer WAIT / NO TRADE.
+- MAXIMUM ONE real tradable setup per archive. If there is no clean Intraday A, say no trade.
+- B / B+ / A- are NOT tradable classes. They must be WAIT / observation only.
+- A real setup requires Intraday A quality only: clear regime, clear location, confirmation, acceptable RR, and no obvious stop magnet.
 - Entry must be LIMIT only. If only MARKET would work, answer WAIT / missed entry.
-- Entry must be based on location: pullback, sweep confirmation, or range edge.
+- Do NOT give passive limit orders only because price is near a zone. If confirmation is missing, answer WAIT_CONFIRMATION.
+- Entry must be based on location plus confirmation: pullback rejection, sweep confirmation, or range-edge rejection/hold.
 - Do not chase after impulse.
 - Avoid long near 24h high after pump and short near 24h low after dump.
 - Stop must be outside structure/noise, not inside normal 15m noise.
+- Reject setups where the stop is immediately behind an obvious high/low/liquidity magnet. Use a wider structural stop, or answer WAIT if RR becomes bad.
+- If the regime recently flipped (TREND_LONG ↔ TREND_SHORT) or looks transitional, answer WAIT until a stable follow-up scan confirms it.
 
 Return in Russian.
 For each candidate, give one of:
-1) precise intraday setup with Entry / Stop / TP1 / TP2 / TP3 / cancellation; or
-2) WAIT with short reason.
-Start with the strongest valid intraday setup. If no valid setup exists, say WAIT / NO_TRADE and rank the rejects by closest-to-valid first.
+1) at most one precise Intraday A setup with Entry / Stop / TP1 / TP2 / TP3 / cancellation; or
+2) WAIT_CONFIRMATION if a zone is interesting but needs 5m/15m rejection/hold; or
+3) WAIT / NO_TRADE with short reason.
+Start with the strongest valid intraday setup. If no valid Intraday A exists, say WAIT / NO_TRADE and rank the rejects by closest-to-valid first.
 """.strip()
 
 
@@ -143,7 +151,7 @@ def build_intraday_candidates_archive(
         "chart_files": chart_files,
         "candle_files": candle_files,
         "instruction_files": ["intraday_task.txt", "status.txt", "reports/*/report.json"],
-        "answer_rule_for_chatgpt": "Confirm or reject intraday candidates. Rank by manual intraday strength, strongest first. LIMIT entries only. Do not force trades.",
+        "answer_rule_for_chatgpt": "Confirm or reject intraday candidates. Maximum one real setup per archive, Intraday A only. B/B+/A- => WAIT. LIMIT entries only. Require confirmation/rejection and reject obvious stop magnets.",
         "storage_policy": "One zip per scan with all green MANUAL_REVIEW candidates only. Fresh 30d download in memory; no parquet/cache is used by Intraday.",
     }
     write_json(build_dir / "manifest.json", manifest)
