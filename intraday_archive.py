@@ -39,8 +39,15 @@ Decision rules:
 - Do not place passive limit orders just because price is near a zone. Need 5m/15m rejection/hold or sweep confirmation.
 - Reject if report/montage/CSV materially disagree or DATA_WARNING exists.
 - Reject if trend just flipped or is transitional.
-- Reject if stop is immediately behind obvious high/low/liquidity magnet; widen structurally or WAIT if RR becomes bad.
 - Do not chase after impulse. If target/low/high was reached before entry, setup is missed.
+
+Stop and RR rules:
+- Do not give micro-invalidation unless the intraday_task explicitly says micro scalp. This task is not micro scalp.
+- SL must be structural: beyond day high/low, 24h high/low, nearest liquidity magnet, and obvious sweep zone.
+- It is forbidden to place SL inside an obvious magnet. If nearby high/low zone is 4088-4090, SL cannot be 4085-4088; SL must be above the zone, e.g. 4091-4095.
+- If structural SL makes RR bad, do not force the trade; answer WAIT / observation only.
+- TP must be calculated from the real SL risk. Wide SL requires wider TP. Micro-TPs with a wide SL are forbidden.
+- Before final answer, check: is SL beyond structure? do TPs match real risk? If not, answer WAIT / observation only.
 
 Compact template:
 **WAIT — observation only, no entry** / **Intraday A**
@@ -156,7 +163,7 @@ def build_intraday_candidates_archive(
         "chart_files": chart_files,
         "candle_files": candle_files,
         "instruction_files": ["intraday_task.txt", "status.txt", "reports/*/report.json"],
-        "answer_rule_for_chatgpt": "Use only this archive data. Brief Russian answer. Maximum one real setup per archive, Intraday A only; B/B+/A- => WAIT observation only. LIMIT only. Bold Entry/Stop/TP numbers. Use midpoint for ranges. Require 5m/15m rejection/hold; reject DATA_WARNING and obvious stop magnets.",
+        "answer_rule_for_chatgpt": "Use only this archive data. Brief Russian answer. Maximum one real setup per archive, Intraday A only; B/B+/A- => WAIT observation only. LIMIT only. Bold Entry/Stop/TP numbers. Use midpoint for ranges. Require 5m/15m rejection/hold. SL must be structural beyond day/24h high-low and liquidity magnets; no micro-invalidation. If structural SL ruins RR, answer WAIT.",
         "storage_policy": "One zip per scan with all green MANUAL_REVIEW candidates only. Fresh 30d download in memory; no parquet/cache is used by Intraday.",
     }
     write_json(build_dir / "manifest.json", manifest)
