@@ -125,3 +125,8 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Added `🧪 Stress Test` button for one parquet-only `multi_test-DDMM.zip` archive.
 - Stress Test collects `SOL_USDT`/`XRP_USDT`/`ADA_USDT` 3y, `XAUT_USDT` 1y, `SILVER_USDT` 183d with 3 async workers and progress buckets.
 - It does not create or modify task files and does not change old scan/montage/A+ Hunter/Intraday modes.
+
+### 39_full Stress Test completeness fix
+- Stress Test now uses a backward futures backfill cursor for long 1m history instead of only the old forward 30d-style walk.
+- If any requested symbol returns less than 95% of the requested candles, the bot raises an error and does not send a misleading small archive.
+- Old scan/intraday/task files remain unchanged.

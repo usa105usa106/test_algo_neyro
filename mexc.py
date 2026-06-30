@@ -395,6 +395,143 @@ class MexcSpotClient:
             await progress_cb(100.0, len(df), expected_total)
         return df
 
+    async def futures_klines_until_end(self, symbol: str, interval: str, end_ms: int) -> list[list[Any]]:
+        """Return up to 2000 futures klines closest to end_ms.
+
+        MEXC futures docs explicitly support passing only `end`; this is safer for
+        multi-year backfills because some gateways return only recent data or empty
+        chunks when old start/end ranges are walked forward.
+        """
+        if interval not in FUTURES_INTERVAL:
+            raise ValueError(f"Unsupported futures interval: {interval}")
+        contract_symbol = to_contract_symbol(symbol)
+        params = {
+            "interval": FUTURES_INTERVAL[interval],
+            "end": int(end_ms // 1000),
+        }
+        data = await self._get_json(f"/api/v1/contract/kline/{contract_symbol}", params)
+        if not isinstance(data, dict) or data.get("success") is not True:
+            raise RuntimeError(f"Unexpected futures kline response for {contract_symbol}: {str(data)[:500]}")
+        payload = data.get("data") or {}
+        times = payload.get("time") or []
+        opens = payload.get("realOpen") or payload.get("open") or []
+        closes = payload.get("realClose") or payload.get("close") or []
+        highs = payload.get("realHigh") or payload.get("high") or []
+        lows = payload.get("realLow") or payload.get("low") or []
+        vols = payload.get("vol") or []
+        amounts = payload.get("amount") or []
+        rows: list[list[Any]] = []
+        for i, t in enumerate(times):
+            try:
+                open_time = int(t) * 1000
+                rows.append([
+                    open_time,
+                    str(opens[i]),
+                    str(highs[i]),
+                    str(lows[i]),
+                    str(closes[i]),
+                    str(vols[i] if i < len(vols) else 0),
+                    open_time + INTERVAL_MS[interval] - 1,
+                    str(amounts[i] if i < len(amounts) else 0),
+                ])
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("Bad futures row symbol=%s index=%s: %s", symbol, i, exc)
+        return rows
+
+    async def download_klines_dataframe_backward(
+        self,
+        symbol: str,
+        interval: str,
+        window: DownloadWindow,
+        progress_every_requests: int = 10,
+        progress_cb: Callable[[float, int, int], Awaitable[None]] | None = None,
+    ) -> pd.DataFrame:
+        """Backfill klines from newest to oldest using the futures `end` cursor.
+
+        This is used by Stress Test only. Old 30d scan modes keep the original
+        forward segmented downloader untouched.
+        """
+        if self.market_type != "futures":
+            return await self.download_klines_dataframe(symbol, interval, window, progress_every_requests, progress_cb)
+        if interval not in INTERVAL_MS:
+            raise ValueError(f"Unsupported interval: {interval}")
+
+        interval_ms = INTERVAL_MS[interval]
+        expected_total = max(1, (window.end_ms - window.start_ms) // interval_ms)
+        cursor_end = int(window.end_ms)
+        rows_by_open: dict[int, list[Any]] = {}
+        request_count = 0
+        max_requests = int(expected_total // 2000) + 100
+        empty_pages = 0
+
+        self.logger.info(
+            "Backward downloading %s %s %s from %s to %s",
+            self.market_type,
+            symbol,
+            interval,
+            window.as_dict()["start_utc"],
+            window.as_dict()["end_utc"],
+        )
+        if progress_cb:
+            await progress_cb(0.0, 0, expected_total)
+
+        while cursor_end >= window.start_ms and request_count < max_requests:
+            chunk = await self.futures_klines_until_end(symbol, interval, cursor_end)
+            request_count += 1
+            if not chunk:
+                empty_pages += 1
+                self.logger.warning(
+                    "Empty backward page %s %s %s cursor_end=%s empty_pages=%s",
+                    self.market_type, symbol, interval, cursor_end, empty_pages,
+                )
+                if empty_pages >= 3:
+                    break
+                cursor_end -= 2000 * interval_ms
+                continue
+
+            empty_pages = 0
+            chunk = sorted(chunk, key=lambda x: int(x[0]))
+            in_window = 0
+            for row in chunk:
+                open_time = int(row[0])
+                if window.start_ms <= open_time <= window.end_ms:
+                    rows_by_open[open_time] = row
+                    in_window += 1
+
+            earliest = min(int(row[0]) for row in chunk)
+            latest = max(int(row[0]) for row in chunk)
+            if request_count % progress_every_requests == 0:
+                pct = min(100.0, len(rows_by_open) / expected_total * 100.0)
+                self.logger.info(
+                    "Backward progress %s %s %s: rows=%s approx=%.1f%% requests=%s cursor=%s earliest=%s latest=%s",
+                    self.market_type, symbol, interval, len(rows_by_open), pct, request_count, cursor_end, earliest, latest,
+                )
+                if progress_cb:
+                    await progress_cb(pct, len(rows_by_open), expected_total)
+
+            next_cursor = earliest - interval_ms
+            if next_cursor >= cursor_end:
+                self.logger.warning(
+                    "Backward downloader made no progress %s %s cursor_end=%s earliest=%s latest=%s in_window=%s",
+                    symbol, interval, cursor_end, earliest, latest, in_window,
+                )
+                break
+            cursor_end = next_cursor
+            await asyncio.sleep(0.25)
+
+            if earliest <= window.start_ms:
+                break
+
+        rows = [rows_by_open[k] for k in sorted(rows_by_open)]
+        df = self._klines_to_df(symbol, interval, rows)
+        self.logger.info(
+            "Backward downloaded %s %s %s rows=%s expected=%s requests=%s",
+            self.market_type, symbol, interval, len(df), expected_total, request_count,
+        )
+        if progress_cb:
+            await progress_cb(100.0, len(df), expected_total)
+        return df
+
     @staticmethod
     def _klines_to_df(symbol: str, interval: str, rows: list[list[Any]]) -> pd.DataFrame:
         if not rows:

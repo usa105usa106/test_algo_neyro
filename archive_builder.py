@@ -1759,7 +1759,7 @@ async def build_stress_test_archive(
                     async def symbol_progress(symbol_pct: float, rows: int, expected: int, symbol_name: str = symbol) -> None:
                         await report_global(symbol_name, rows, expected, f"worker {worker_id}")
 
-                    df = await worker_client.download_klines_dataframe(
+                    df = await worker_client.download_klines_dataframe_backward(
                         symbol,
                         interval,
                         window,
@@ -1773,11 +1773,11 @@ async def build_stress_test_archive(
                     coverage = len(df) / expected_rows
                     if coverage < 0.95:
                         msg = (
-                            f"{symbol}: downloaded partial history {len(df):,}/{expected_rows:,} "
+                            f"{symbol}: incomplete history {len(df):,}/{expected_rows:,} "
                             f"candles ({coverage:.1%}), ~{actual_days_by_rows:.1f} days inside requested {days}d"
                         )
-                        warnings.append(msg)
-                        logger.warning(msg)
+                        logger.error(msg)
+                        raise RuntimeError(msg)
 
                     out_file = candles_out / f"{symbol}_{interval}_{days}d.parquet"
                     save_dataframe_parquet(df, out_file)
@@ -1827,6 +1827,13 @@ async def build_stress_test_archive(
     workers = [asyncio.create_task(worker(i + 1)) for i in range(STRESS_TEST_WORKERS)]
     await asyncio.gather(*workers)
 
+    failed_symbols = sorted([s for s, r in results.items() if r.get("error")])
+    if failed_symbols:
+        details = "; ".join(str(results[s].get("error", "unknown"))[:250] for s in failed_symbols)
+        raise RuntimeError(
+            "Stress Test: архив не отправлен, потому что история собрана не полностью. "
+            f"Проблемные символы: {', '.join(failed_symbols)}. {details}"
+        )
     if not candle_files:
         raise RuntimeError("Stress Test: ни один parquet-файл не собран. Проверь MEXC symbols/API/log_full.")
 

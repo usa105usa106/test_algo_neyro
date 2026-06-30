@@ -278,3 +278,8 @@ INTRADAY_DAYS_BACK=30
 - Requested data: `SOL_USDT` 3y, `XRP_USDT` 3y, `ADA_USDT` 3y, `XAUT_USDT` 1y, `SILVER_USDT` 183d.
 - Collection runs with 3 async workers and 10% progress buckets.
 - Stress Test creates no `task.txt`, no `setup_format.txt`, and no `intraday_task.txt`; old modes remain unchanged.
+
+### 39_full Stress Test completeness fix
+- Stress Test now uses a backward futures backfill cursor for long 1m history instead of only the old forward 30d-style walk.
+- If any requested symbol returns less than 95% of the requested candles, the bot raises an error and does not send a misleading small archive.
+- Old scan/intraday/task files remain unchanged.
