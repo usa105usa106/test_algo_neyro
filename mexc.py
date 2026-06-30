@@ -277,7 +277,7 @@ class MexcSpotClient:
     async def spot_klines_until_end(self, symbol: str, interval: str, end_ms: int, limit: int = 500) -> list[list[Any]]:
         """Return spot klines closest to end_ms using an endTime cursor.
 
-        MEXC Spot REST sometimes returns empty lists when a long historical
+        Spot REST endpoints can return empty lists when a long historical
         range is walked from an old startTime. For long Stress Test backfills
         we page from newest to oldest with endTime only, then dedupe by
         open time. This keeps old scan modes untouched.
@@ -499,9 +499,8 @@ class MexcSpotClient:
             if self.market_type == "futures":
                 chunk = await self.futures_klines_until_end(symbol, interval, cursor_end)
             elif self.market_type == "binance_spot":
-                # Binance is not used by MEXC Spot Stress Test, but keeping the
-                # branch makes the helper safe if reused. Binance accepts endTime
-                # without startTime on /api/v3/klines.
+                # Binance Spot Stress Test uses endTime-only backward paging.
+                # Binance accepts endTime without startTime on /api/v3/klines.
                 params = {
                     "symbol": symbol,
                     "interval": interval,

@@ -123,10 +123,10 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 ## 39_full Stress Test update
 - Version is now `39_full`.
 - Added `🧪 Stress Test` button for one parquet-only `multi_test-DDMM.zip` archive.
-- Stress Test collects MEXC Spot `SOLUSDT`/`XRPUSDT`/`ADAUSDT` 3y and `XAUTUSDT` 1y with 3 async workers and progress buckets. `SILVER` is removed from Stress Test because it is not available on MEXC Spot.
+- Stress Test collects Binance Spot `SOLUSDT`/`ADAUSDT`/`XRPUSDT` 3y and `XAUTUSDT` 4 months with 3 async workers and progress buckets. `SILVER` is removed from Stress Test.
 - It does not create or modify task files and does not change old scan/montage/A+ Hunter/Intraday modes.
 
 ### 39_full Stress Test spot/completeness fix
-- Stress Test now uses MEXC Spot `/api/v3/klines` forward chunked collection for long 1m history.
+- Stress Test now uses Binance Spot `/api/v3/klines` backward chunked collection for long 1m history.
 - If any requested symbol returns less than 95% of the requested candles, the bot raises an error, writes details to `/log_full`, and does not send a misleading small archive.
 - Old scan/intraday/task files remain unchanged.

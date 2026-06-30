@@ -275,11 +275,11 @@ INTRADAY_DAYS_BACK=30
 ## 39_full Stress Test update
 - Added `🧪 Stress Test` button.
 - It builds one parquet-only archive named `multi_test-DDMM.zip`.
-- Requested data: MEXC Spot `SOLUSDT` 3y, `XRPUSDT` 3y, `ADAUSDT` 3y, `XAUTUSDT` 1y. `SILVER` is removed because it is not on MEXC Spot.
+- Requested data: Binance Spot `SOLUSDT` 3y, `ADAUSDT` 3y, `XRPUSDT` 3y, `XAUTUSDT` 4 months. `SILVER` is removed.
 - Collection runs with 3 async workers and 10% progress buckets.
 - Stress Test creates no `task.txt`, no `setup_format.txt`, and no `intraday_task.txt`; old modes remain unchanged.
 
 ### 39_full Stress Test spot/completeness fix
-- Stress Test now uses MEXC Spot `/api/v3/klines` forward chunked collection for long 1m history.
+- Stress Test now uses Binance Spot `/api/v3/klines` backward chunked collection for long 1m history.
 - If any requested symbol returns less than 95% of the requested candles, the bot raises an error, writes details to `/log_full`, and does not send a misleading small archive.
 - Old scan/intraday/task files remain unchanged.
