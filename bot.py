@@ -25,7 +25,7 @@ from telegram.ext import (
     filters,
 )
 
-from archive_builder import build_aplus_hunter_archive, build_logs_archive, build_scan_archive
+from archive_builder import build_aplus_hunter_archive, build_logs_archive, build_scan_archive, build_stress_test_archive
 from intraday_archive import build_intraday_candidates_archive
 from intraday_engine import IntradayReport, analyze_intraday_symbol
 from config import SCAN_PRESETS, SYMBOL_CANDIDATES, ScanPreset, Settings, load_settings
@@ -42,6 +42,7 @@ BTN_SYMBOLS_CHECK = "symbols_check"
 BTN_MONTAGE = "montage_toggle"
 BTN_APLUS_HUNTER = "aplus_hunter_toggle"
 BTN_INTRADAY = "intraday_toggle"
+BTN_STRESS_TEST = "stress_test"
 BTN_SCAN_PREFIX = "scan:"
 APLUS_SYMBOL_COOLDOWN_SEC = 45 * 60
 INTRADAY_DEFAULT_SYMBOLS = ["BTC_USDT", "ETH_USDT", "XAU_USDT", "SILVER_USDT", "USOIL_USDT"]
@@ -243,6 +244,9 @@ def main_menu(runtime: BotRuntime | None = None) -> InlineKeyboardMarkup:
             InlineKeyboardButton(intraday_label, callback_data=BTN_INTRADAY),
         ],
         [
+            InlineKeyboardButton("🧪 Stress Test", callback_data=BTN_STRESS_TEST),
+        ],
+        [
             InlineKeyboardButton("⚙️ Symbols check", callback_data=BTN_SYMBOLS_CHECK),
         ],
         [
@@ -304,7 +308,8 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "• Multi 5 assets 30d — старый общий 30d архив.\n"
         "• Montage ON/OFF — старый montage-режим.\n"
         "• A+ Hunter ON/OFF — старый top-200 hunter с таймером.\n"
-        "• Intraday ON/OFF — новый внутридневной режим, старые task-файлы не трогает.\n\n"
+        "• Intraday ON/OFF — новый внутридневной режим, старые task-файлы не трогает.\n"
+        "• Stress Test — parquet-only архив: SOL/XRP/ADA 3y, XAUT 1y, SILVER 0.5y, 3 потока, без task-файлов.\n\n"
         "Intraday:\n"
         "• Скан каждые 5 минут после окончания предыдущего скана/архива.\n"
         "• Данные Intraday: свежая загрузка 30 дней, без parquet/cache.\n"
@@ -418,6 +423,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await toggle_aplus_hunter(update, context)
     elif data == BTN_INTRADAY:
         await toggle_intraday(update, context)
+    elif data == BTN_STRESS_TEST:
+        await start_stress_test_job(update, context)
     elif data.startswith(BTN_SCAN_PREFIX):
         key = data.removeprefix(BTN_SCAN_PREFIX)
         preset = SCAN_PRESETS.get(key)
@@ -558,6 +565,48 @@ async def build_scan_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int, prese
         runtime.active_task = None
         runtime.active_task_name = None
 
+
+
+async def start_stress_test_job(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if runtime.active_task and not runtime.active_task.done():
+        await reply_with_menu(update, f"Уже {runtime.active_summary()}. Дождись окончания или нажми /reset.", runtime)
+        return
+    if runtime.aplus_hunter_busy:
+        await reply_with_menu(update, "Сейчас идёт A+ Hunter круг. Дождись завершения или выключи A+ Hunter.", runtime)
+        return
+    if runtime.intraday_busy:
+        await reply_with_menu(update, "Сейчас идёт Intraday scan. Дождись завершения или выключи Intraday.", runtime)
+        return
+    chat_id = update.effective_chat.id
+    runtime.active_task_name = "Stress Test"
+    runtime.active_task = asyncio.create_task(build_stress_test_job(context, chat_id))
+    await reply_with_menu(
+        update,
+        "Stress Test: запущено. Собираю 1m parquet: SOL/XRP/ADA за 3 года, XAUT за 1 год, SILVER за полгода. Работаю в 3 потока, старые режимы и task-файлы не трогаю.",
+        runtime,
+    )
+
+
+async def build_stress_test_job(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    try:
+        async def progress(msg: str) -> None:
+            runtime.logger.info(msg)
+            await context.bot.send_message(chat_id=chat_id, text=msg[:3900])
+
+        zip_path = await build_stress_test_archive(runtime.settings, runtime.logger, progress)
+        runtime.last_export = zip_path
+        await send_archive_or_parts(context, chat_id, zip_path, runtime)
+    except asyncio.CancelledError:
+        runtime.logger.warning("Stress Test job cancelled")
+        await context.bot.send_message(chat_id=chat_id, text="Stress Test: задача отменена /reset.")
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.exception("Stress Test job failed: %s", exc)
+        await context.bot.send_message(chat_id=chat_id, text=f"Stress Test: ошибка: {exc}\nНажми /log_full, чтобы забрать полный лог.")
+    finally:
+        runtime.active_task = None
+        runtime.active_task_name = None
 
 def _format_mmss(seconds: int) -> str:
     seconds = max(0, int(seconds))
