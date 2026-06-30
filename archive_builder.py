@@ -1759,7 +1759,7 @@ async def build_stress_test_archive(
                     async def symbol_progress(symbol_pct: float, rows: int, expected: int, symbol_name: str = symbol) -> None:
                         await report_global(symbol_name, rows, expected, f"worker {worker_id}")
 
-                    df = await worker_client.download_klines_dataframe(
+                    df = await worker_client.download_klines_dataframe_backward(
                         symbol,
                         interval,
                         window,

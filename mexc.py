@@ -274,6 +274,22 @@ class MexcSpotClient:
         }
         return await self._get_json("/api/v3/klines", params)
 
+    async def spot_klines_until_end(self, symbol: str, interval: str, end_ms: int, limit: int = 500) -> list[list[Any]]:
+        """Return spot klines closest to end_ms using an endTime cursor.
+
+        MEXC Spot REST sometimes returns empty lists when a long historical
+        range is walked from an old startTime. For long Stress Test backfills
+        we page from newest to oldest with endTime only, then dedupe by
+        open time. This keeps old scan modes untouched.
+        """
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "endTime": int(end_ms),
+            "limit": int(limit),
+        }
+        return await self._get_json("/api/v3/klines", params)
+
     async def futures_klines(self, symbol: str, interval: str, start_ms: int, end_ms: int) -> list[list[Any]]:
         if interval not in FUTURES_INTERVAL:
             raise ValueError(f"Unsupported futures interval: {interval}")
@@ -446,13 +462,14 @@ class MexcSpotClient:
         progress_every_requests: int = 10,
         progress_cb: Callable[[float, int, int], Awaitable[None]] | None = None,
     ) -> pd.DataFrame:
-        """Backfill klines from newest to oldest using the futures `end` cursor.
+        """Backfill klines from newest to oldest using an end-time cursor.
 
-        This is used by Stress Test only. Old 30d scan modes keep the original
-        forward segmented downloader untouched.
+        Stress Test uses this for long archives. Old 30d scan modes keep the
+        original forward segmented downloader untouched. Futures uses MEXC's
+        contract endpoint with only `end`; Spot uses `/api/v3/klines` with
+        only `endTime`. This avoids walking from 2023 through thousands of
+        empty REST chunks when the exchange refuses old startTime windows.
         """
-        if self.market_type != "futures":
-            return await self.download_klines_dataframe(symbol, interval, window, progress_every_requests, progress_cb)
         if interval not in INTERVAL_MS:
             raise ValueError(f"Unsupported interval: {interval}")
 
@@ -461,8 +478,11 @@ class MexcSpotClient:
         cursor_end = int(window.end_ms)
         rows_by_open: dict[int, list[Any]] = {}
         request_count = 0
-        max_requests = int(expected_total // 2000) + 100
+        chunk_limit = 2000 if self.market_type == "futures" else (1000 if self.market_type == "binance_spot" else 500)
+        max_requests = int(expected_total // chunk_limit) + 250
         empty_pages = 0
+        stale_pages = 0
+        oldest_seen: int | None = None
 
         self.logger.info(
             "Backward downloading %s %s %s from %s to %s",
@@ -476,57 +496,135 @@ class MexcSpotClient:
             await progress_cb(0.0, 0, expected_total)
 
         while cursor_end >= window.start_ms and request_count < max_requests:
-            chunk = await self.futures_klines_until_end(symbol, interval, cursor_end)
+            if self.market_type == "futures":
+                chunk = await self.futures_klines_until_end(symbol, interval, cursor_end)
+            elif self.market_type == "binance_spot":
+                # Binance is not used by MEXC Spot Stress Test, but keeping the
+                # branch makes the helper safe if reused. Binance accepts endTime
+                # without startTime on /api/v3/klines.
+                params = {
+                    "symbol": symbol,
+                    "interval": interval,
+                    "endTime": int(cursor_end),
+                    "limit": int(chunk_limit),
+                }
+                chunk = await self._get_json("/api/v3/klines", params)
+            else:
+                chunk = await self.spot_klines_until_end(symbol, interval, cursor_end, limit=chunk_limit)
             request_count += 1
+
             if not chunk:
                 empty_pages += 1
                 self.logger.warning(
-                    "Empty backward page %s %s %s cursor_end=%s empty_pages=%s",
-                    self.market_type, symbol, interval, cursor_end, empty_pages,
+                    "Empty backward page %s %s %s cursor_end=%s empty_pages=%s; stepping back",
+                    self.market_type,
+                    symbol,
+                    interval,
+                    cursor_end,
+                    empty_pages,
                 )
-                if empty_pages >= 3:
+                cursor_end -= interval_ms * chunk_limit
+                if empty_pages >= 10 and not rows_by_open:
+                    # No current/recent klines at all: this is a real symbol/API problem.
+                    self.logger.error(
+                        "No backward kline pages returned for %s %s after %s requests; check symbol/API endpoint",
+                        symbol,
+                        interval,
+                        request_count,
+                    )
                     break
-                cursor_end -= 2000 * interval_ms
+                if progress_cb and request_count % progress_every_requests == 0:
+                    pct = min(100.0, len(rows_by_open) / expected_total * 100)
+                    await progress_cb(pct, len(rows_by_open), expected_total)
+                await asyncio.sleep(0.25 if self.market_type in {"futures", "binance_spot"} else 0.08)
                 continue
 
             empty_pages = 0
             chunk = sorted(chunk, key=lambda x: int(x[0]))
-            in_window = 0
-            for row in chunk:
-                open_time = int(row[0])
-                if window.start_ms <= open_time <= window.end_ms:
-                    rows_by_open[open_time] = row
-                    in_window += 1
+            page_opens = [int(row[0]) for row in chunk if row and row[0] is not None]
+            if not page_opens:
+                cursor_end -= interval_ms * chunk_limit
+                continue
 
-            earliest = min(int(row[0]) for row in chunk)
-            latest = max(int(row[0]) for row in chunk)
+            page_oldest = min(page_opens)
+            page_newest = max(page_opens)
+            added = 0
+            for row in chunk:
+                try:
+                    open_time = int(row[0])
+                except Exception:  # noqa: BLE001
+                    continue
+                if open_time < window.start_ms or open_time > window.end_ms:
+                    continue
+                if open_time not in rows_by_open:
+                    rows_by_open[open_time] = row
+                    added += 1
+
+            if oldest_seen is not None and page_oldest >= oldest_seen:
+                stale_pages += 1
+                self.logger.warning(
+                    "Backward page did not move older %s %s page_oldest=%s previous_oldest=%s stale_pages=%s",
+                    self.market_type,
+                    symbol,
+                    page_oldest,
+                    oldest_seen,
+                    stale_pages,
+                )
+            else:
+                stale_pages = 0
+            oldest_seen = page_oldest if oldest_seen is None else min(oldest_seen, page_oldest)
+
             if request_count % progress_every_requests == 0:
-                pct = min(100.0, len(rows_by_open) / expected_total * 100.0)
+                pct = min(100.0, len(rows_by_open) / expected_total * 100)
                 self.logger.info(
-                    "Backward progress %s %s %s: rows=%s approx=%.1f%% requests=%s cursor=%s earliest=%s latest=%s",
-                    self.market_type, symbol, interval, len(rows_by_open), pct, request_count, cursor_end, earliest, latest,
+                    "Backward progress %s %s %s: rows=%s approx=%.1f%% requests=%s page=%s..%s added=%s",
+                    self.market_type,
+                    symbol,
+                    interval,
+                    len(rows_by_open),
+                    pct,
+                    request_count,
+                    page_oldest,
+                    page_newest,
+                    added,
                 )
                 if progress_cb:
                     await progress_cb(pct, len(rows_by_open), expected_total)
 
-            next_cursor = earliest - interval_ms
-            if next_cursor >= cursor_end:
-                self.logger.warning(
-                    "Backward downloader made no progress %s %s cursor_end=%s earliest=%s latest=%s in_window=%s",
-                    symbol, interval, cursor_end, earliest, latest, in_window,
+            if page_oldest <= window.start_ms:
+                break
+            if stale_pages >= 5:
+                self.logger.error(
+                    "Backward kline cursor stuck for %s %s at oldest=%s cursor_end=%s; stopping to avoid infinite loop",
+                    symbol,
+                    interval,
+                    oldest_seen,
+                    cursor_end,
                 )
                 break
-            cursor_end = next_cursor
-            await asyncio.sleep(0.25)
+            cursor_end = page_oldest - 1
+            await asyncio.sleep(0.25 if self.market_type in {"futures", "binance_spot"} else 0.08)
 
-            if earliest <= window.start_ms:
-                break
+        if request_count >= max_requests:
+            self.logger.error(
+                "Backward kline max_requests reached for %s %s rows=%s expected=%s max_requests=%s",
+                symbol,
+                interval,
+                len(rows_by_open),
+                expected_total,
+                max_requests,
+            )
 
         rows = [rows_by_open[k] for k in sorted(rows_by_open)]
         df = self._klines_to_df(symbol, interval, rows, source_exchange=self._source_exchange_name())
         self.logger.info(
             "Backward downloaded %s %s %s rows=%s expected=%s requests=%s",
-            self.market_type, symbol, interval, len(df), expected_total, request_count,
+            self.market_type,
+            symbol,
+            interval,
+            len(df),
+            expected_total,
+            request_count,
         )
         if progress_cb:
             await progress_cb(100.0, len(df), expected_total)
