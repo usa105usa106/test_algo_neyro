@@ -76,7 +76,7 @@ class DownloadWindow:
 
 
 class MexcSpotClient:
-    """Market-data-only client for public MEXC Futures klines.
+    """Market-data-only client for public MEXC/spot/futures klines.
 
     No trading endpoints exist here: no place_order, no cancel_order, no private account actions.
     """
@@ -116,7 +116,7 @@ class MexcSpotClient:
                     text = await resp.text()
                     last_text = text[:500]
                     if resp.status in {418, 429} or resp.status >= 500:
-                        if resp.status in {418, 429} and self.market_type == "futures":
+                        if resp.status in {418, 429} and self.market_type in {"futures", "spot"}:
                             self.min_request_interval_sec = min(max(self.min_request_interval_sec * 1.5, self.min_request_interval_sec + 0.5), 10.0)
                         wait = min(10 + attempt * 10, 90)
                         self.logger.warning(
@@ -136,7 +136,7 @@ class MexcSpotClient:
                         code = str(data.get("code", ""))
                         message = str(data.get("message", ""))
                         if code in {"510", "429", "418"} or "too frequent" in message.lower():
-                            if self.market_type == "futures":
+                            if self.market_type in {"futures", "spot"}:
                                 self.min_request_interval_sec = min(max(self.min_request_interval_sec * 1.5, self.min_request_interval_sec + 0.5), 10.0)
                             wait = min(15 + attempt * 15, 120)
                             self.logger.warning(
@@ -389,7 +389,7 @@ class MexcSpotClient:
                 start = last_open_seen + interval_ms
             await asyncio.sleep(0.25 if self.market_type in {"futures", "binance_spot"} else 0.05)
 
-        df = self._klines_to_df(symbol, interval, rows)
+        df = self._klines_to_df(symbol, interval, rows, source_exchange=self._source_exchange_name())
         self.logger.info("Downloaded %s %s %s rows=%s expected=%s", self.market_type, symbol, interval, len(df), expected_total)
         if progress_cb:
             await progress_cb(100.0, len(df), expected_total)
@@ -523,7 +523,7 @@ class MexcSpotClient:
                 break
 
         rows = [rows_by_open[k] for k in sorted(rows_by_open)]
-        df = self._klines_to_df(symbol, interval, rows)
+        df = self._klines_to_df(symbol, interval, rows, source_exchange=self._source_exchange_name())
         self.logger.info(
             "Backward downloaded %s %s %s rows=%s expected=%s requests=%s",
             self.market_type, symbol, interval, len(df), expected_total, request_count,
@@ -532,12 +532,26 @@ class MexcSpotClient:
             await progress_cb(100.0, len(df), expected_total)
         return df
 
+    def _source_exchange_name(self) -> str:
+        if self.market_type == "futures":
+            return "MEXC_FUTURES_PUBLIC"
+        if self.market_type == "binance_spot":
+            return "BINANCE_SPOT_PUBLIC"
+        return "MEXC_SPOT_PUBLIC"
+
     @staticmethod
-    def _klines_to_df(symbol: str, interval: str, rows: list[list[Any]]) -> pd.DataFrame:
+    def _klines_to_df(
+        symbol: str,
+        interval: str,
+        rows: list[list[Any]],
+        source_exchange: str | None = None,
+    ) -> pd.DataFrame:
         if not rows:
             return pd.DataFrame(columns=[
                 "open_time", "datetime_utc", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "symbol", "interval", "source_exchange"
             ])
+        if source_exchange is None:
+            source_exchange = "MEXC_FUTURES_PUBLIC" if symbol.upper().endswith("_USDT") or "_" in symbol else "BINANCE_SPOT_PUBLIC"
         clean = []
         for row in rows:
             clean.append({
@@ -552,7 +566,7 @@ class MexcSpotClient:
                 "quote_volume": float(row[7]) if len(row) > 7 and row[7] is not None else None,
                 "symbol": symbol,
                 "interval": interval,
-                "source_exchange": "MEXC_FUTURES_PUBLIC" if symbol.upper().endswith("_USDT") or "_" in symbol else "BINANCE_SPOT_PUBLIC",
+                "source_exchange": source_exchange,
             })
         df = pd.DataFrame(clean)
         df = df.drop_duplicates(subset=["open_time"]).sort_values("open_time").reset_index(drop=True)

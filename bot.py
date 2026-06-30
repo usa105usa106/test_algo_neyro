@@ -309,7 +309,7 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "• Montage ON/OFF — старый montage-режим.\n"
         "• A+ Hunter ON/OFF — старый top-200 hunter с таймером.\n"
         "• Intraday ON/OFF — новый внутридневной режим, старые task-файлы не трогает.\n"
-        "• Stress Test — parquet-only архив: SOL/XRP/ADA 3y, XAUT 1y, SILVER 0.5y, 3 потока, без task-файлов.\n\n"
+        "• Stress Test — MEXC Spot parquet-only архив: SOL/XRP/ADA 3y, XAUT 1y, 3 потока, без task-файлов.\n\n"
         "Intraday:\n"
         "• Скан каждые 5 минут после окончания предыдущего скана/архива.\n"
         "• Данные Intraday: свежая загрузка 30 дней, без parquet/cache.\n"
@@ -583,7 +583,7 @@ async def start_stress_test_job(update: Update, context: ContextTypes.DEFAULT_TY
     runtime.active_task = asyncio.create_task(build_stress_test_job(context, chat_id))
     await reply_with_menu(
         update,
-        "Stress Test: запущено. Собираю 1m parquet: SOL/XRP/ADA за 3 года, XAUT за 1 год, SILVER за полгода. Работаю в 3 потока, старые режимы и task-файлы не трогаю.",
+        "Stress Test: запущено. Собираю MEXC Spot 1m parquet: SOL/XRP/ADA за 3 года, XAUT за 1 год. Работаю в 3 потока, старые режимы и task-файлы не трогаю. Подробные ошибки будут в /log_full.",
         runtime,
     )
 

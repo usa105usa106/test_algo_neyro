@@ -38,13 +38,13 @@ ASSET_LABELS = {
 
 
 STRESS_TEST_SPECS = [
-    {"symbol": "SOL_USDT", "days": 365 * 3, "label": "SOL 3y"},
-    {"symbol": "XRP_USDT", "days": 365 * 3, "label": "XRP 3y"},
-    {"symbol": "ADA_USDT", "days": 365 * 3, "label": "ADA 3y"},
-    {"symbol": "XAUT_USDT", "days": 365, "label": "XAUT 1y"},
-    {"symbol": "SILVER_USDT", "days": 183, "label": "SILVER 0.5y"},
+    {"symbol": "SOLUSDT", "days": 365 * 3, "label": "SOL spot 3y"},
+    {"symbol": "XRPUSDT", "days": 365 * 3, "label": "XRP spot 3y"},
+    {"symbol": "ADAUSDT", "days": 365 * 3, "label": "ADA spot 3y"},
+    {"symbol": "XAUTUSDT", "days": 365, "label": "XAUT spot 1y"},
 ]
 STRESS_TEST_WORKERS = 3
+STRESS_TEST_MARKET_TYPE = "spot"
 
 
 def _asset_key_for_symbol(symbol: str) -> str | None:
@@ -1682,14 +1682,14 @@ async def build_stress_test_archive(
     meta_out.mkdir(parents=True, exist_ok=True)
 
     reporter = PercentReporter("Stress Test", progress_cb)
-    await reporter.report(0, "старт: 5 активов, 1m parquet, 3 потока", force=True)
-    logger.info("Starting Stress Test archive build specs=%s workers=%s", STRESS_TEST_SPECS, STRESS_TEST_WORKERS)
+    await reporter.report(0, "старт: 4 spot-актива, 1m parquet, 3 потока", force=True)
+    logger.info("Starting Stress Test spot archive build specs=%s workers=%s", STRESS_TEST_SPECS, STRESS_TEST_WORKERS)
 
     interval = "1m"
     interval_ms = INTERVAL_MS[interval]
-    client = MexcSpotClient(settings.mexc_base_url, logger, settings.mexc_market_type)
+    client = MexcSpotClient(settings.mexc_base_url, logger, STRESS_TEST_MARKET_TYPE)
     try:
-        await reporter.report(5, f"проверяю MEXC endpoint {settings.mexc_base_url}")
+        await reporter.report(5, f"проверяю MEXC Spot endpoint {settings.mexc_base_url}")
         ping_ok = await client.ping()
         server_time = await client.server_time()
         server_ms = int(server_time["serverTime"])
@@ -1704,7 +1704,7 @@ async def build_stress_test_archive(
         windows[str(spec["symbol"])] = window
         total_expected += max(1, int((window.end_ms - window.start_ms) // interval_ms))
 
-    await reporter.report(10, f"MEXC доступен, начинаю сбор: {STRESS_TEST_WORKERS} потока")
+    await reporter.report(10, f"MEXC Spot доступен, начинаю сбор: {STRESS_TEST_WORKERS} потока")
 
     progress_lock = asyncio.Lock()
     states: dict[str, dict[str, Any]] = {
@@ -1740,7 +1740,7 @@ async def build_stress_test_archive(
         queue.put_nowait(dict(spec))
 
     async def worker(worker_id: int) -> None:
-        worker_client = MexcSpotClient(settings.mexc_base_url, logger, settings.mexc_market_type)
+        worker_client = MexcSpotClient(settings.mexc_base_url, logger, STRESS_TEST_MARKET_TYPE)
         try:
             while True:
                 try:
@@ -1759,7 +1759,7 @@ async def build_stress_test_archive(
                     async def symbol_progress(symbol_pct: float, rows: int, expected: int, symbol_name: str = symbol) -> None:
                         await report_global(symbol_name, rows, expected, f"worker {worker_id}")
 
-                    df = await worker_client.download_klines_dataframe_backward(
+                    df = await worker_client.download_klines_dataframe(
                         symbol,
                         interval,
                         window,
@@ -1859,9 +1859,9 @@ async def build_stress_test_archive(
     (build_dir / "status.txt").write_text("\n".join(status_lines) + "\n", encoding="utf-8")
     write_json(meta_out / "exchange_info.json", exchange_info)
     write_json(meta_out / "api_status.json", {
-        "mexc_futures_public_ping_ok": ping_ok,
+        "mexc_spot_public_ping_ok": ping_ok,
         "mexc_server_time": server_time,
-        "note": "Stress Test uses public MEXC Futures market-data endpoints only. No trading endpoints are used.",
+        "note": "Stress Test uses public MEXC Spot market-data endpoints only. No trading endpoints are used.",
     })
     manifest = {
         "archive_type": "multi_test_parquet_stress",
@@ -1869,17 +1869,17 @@ async def build_stress_test_archive(
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "created_at_utc_plus_3_msk": created_msk,
         "telegram_archive_stamp_utc_plus_3_day_month": day_stamp,
-        "exchange": "MEXC_FUTURES_PUBLIC",
+        "exchange": "MEXC_SPOT_PUBLIC",
         "base_url": settings.mexc_base_url,
-        "market_type": settings.mexc_market_type,
+        "market_type": STRESS_TEST_MARKET_TYPE,
         "base_interval": interval,
         "parallel_workers": STRESS_TEST_WORKERS,
         "request_policy": {
-            "endpoint": "/api/v1/contract/kline/{symbol}",
-            "chunk_limit_1m_candles": 2000,
+            "endpoint": "/api/v3/klines",
+            "chunk_limit_1m_candles": 500,
             "worker_count": STRESS_TEST_WORKERS,
-            "per_worker_min_request_interval_sec": 1.25,
-            "rate_limit_handling": "MexcSpotClient retries and increases pause on HTTP/app-level rate limit responses.",
+            "per_worker_min_request_interval_sec": 0.35,
+            "rate_limit_handling": "MexcSpotClient retries on HTTP/app-level rate limit responses; detailed errors are written to /log_full.",
         },
         "requested": STRESS_TEST_SPECS,
         "symbols": [spec["symbol"] for spec in STRESS_TEST_SPECS],
