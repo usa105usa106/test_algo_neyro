@@ -41,7 +41,7 @@ STRESS_TEST_SPECS = [
     {"symbol": "SOLUSDT", "days": 365 * 3, "label": "SOL Binance Spot 3y"},
     {"symbol": "ADAUSDT", "days": 365 * 3, "label": "ADA Binance Spot 3y"},
     {"symbol": "XRPUSDT", "days": 365 * 3, "label": "XRP Binance Spot 3y"},
-    {"symbol": "XAUTUSDT", "days": 120, "label": "XAUT Binance Spot 4m"},
+    {"symbol": "XAUTUSDT", "days": 120, "label": "XAUT Binance Spot 4m", "allow_short_history": True, "min_coverage_ratio": 0.75, "min_effective_days": 90},
 ]
 STRESS_TEST_WORKERS = 3
 STRESS_TEST_MARKET_TYPE = "binance_spot"
@@ -1772,13 +1772,30 @@ async def build_stress_test_archive(
 
                     actual_days_by_rows = len(df) * interval_ms / (24 * 60 * 60 * 1000)
                     coverage = len(df) / expected_rows
-                    if coverage < 0.95:
+                    min_coverage_ratio = float(spec.get("min_coverage_ratio", 0.95))
+                    allow_short_history = bool(spec.get("allow_short_history", False))
+                    min_effective_days = float(spec.get("min_effective_days", 0.0) or 0.0)
+                    if coverage < min_coverage_ratio:
                         msg = (
                             f"{symbol}: incomplete history {len(df):,}/{expected_rows:,} "
                             f"candles ({coverage:.1%}), ~{actual_days_by_rows:.1f} days inside requested {days}d"
                         )
                         logger.error(msg)
                         raise RuntimeError(msg)
+                    if coverage < 0.95:
+                        if not allow_short_history or actual_days_by_rows < min_effective_days:
+                            msg = (
+                                f"{symbol}: incomplete history {len(df):,}/{expected_rows:,} "
+                                f"candles ({coverage:.1%}), ~{actual_days_by_rows:.1f} days inside requested {days}d"
+                            )
+                            logger.error(msg)
+                            raise RuntimeError(msg)
+                        msg = (
+                            f"{symbol}: shorter listed history accepted: {len(df):,}/{expected_rows:,} "
+                            f"candles ({coverage:.1%}), ~{actual_days_by_rows:.1f} days inside requested {days}d"
+                        )
+                        logger.warning(msg)
+                        warnings.append(msg)
 
                     out_file = candles_out / f"{symbol}_{interval}_{days}d.parquet"
                     save_dataframe_parquet(df, out_file)
@@ -1797,6 +1814,9 @@ async def build_stress_test_archive(
                         "rows": len(df),
                         "actual_days_by_rows": round(actual_days_by_rows, 3),
                         "coverage_ratio": round(coverage, 6),
+                        "allow_short_history": bool(spec.get("allow_short_history", False)),
+                        "min_coverage_ratio": float(spec.get("min_coverage_ratio", 0.95)),
+                        "min_effective_days": float(spec.get("min_effective_days", 0.0) or 0.0),
                         "file": candle_files[symbol],
                     }
                     async with progress_lock:
