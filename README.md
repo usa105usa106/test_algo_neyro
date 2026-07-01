@@ -283,3 +283,11 @@ INTRADAY_DAYS_BACK=30
 - Stress Test now uses Binance Spot `/api/v3/klines` backward chunked collection for long 1m history.
 - If any requested symbol returns less than 95% of the requested candles, the bot raises an error, writes details to `/log_full`, and does not send a misleading small archive.
 - Old scan/intraday/task files remain unchanged.
+
+### 39_full Stress Test 2 update
+- Added `🧪 Stress Test 2` button.
+- Stress Test 2 collects MEXC Futures 1m parquet for the last 30 days: `SOL_USDT`, `XRP_USDT`, `ADA_USDT`, `XAUT_USDT`, `XAU_USDT`, `SILVER_USDT`, `BTC_USDT`, `ETH_USDT`.
+- Collection uses 3 async workers and sends 10% progress buckets.
+- If a symbol is unavailable or has incomplete 30d history, that symbol is skipped and the archive is still created from successful symbols.
+- Output archive name: `multi_test2-DDMM.zip`; large archives are split into binary `.part001/.part002/...` pieces that can be reassembled.
+- No task files are created or modified by Stress Test 2.

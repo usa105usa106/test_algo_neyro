@@ -48,6 +48,20 @@ STRESS_TEST_MARKET_TYPE = "binance_spot"
 STRESS_TEST_BASE_URL = "https://api.binance.com"
 
 
+STRESS_TEST2_SPECS = [
+    {"symbol": "SOL_USDT", "days": 30, "label": "SOL MEXC Futures 30d"},
+    {"symbol": "XRP_USDT", "days": 30, "label": "XRP MEXC Futures 30d"},
+    {"symbol": "ADA_USDT", "days": 30, "label": "ADA MEXC Futures 30d"},
+    {"symbol": "XAUT_USDT", "days": 30, "label": "XAUT MEXC Futures 30d"},
+    {"symbol": "XAU_USDT", "days": 30, "label": "XAU MEXC Futures 30d"},
+    {"symbol": "SILVER_USDT", "days": 30, "label": "SILVER MEXC Futures 30d"},
+    {"symbol": "BTC_USDT", "days": 30, "label": "BTC MEXC Futures 30d"},
+    {"symbol": "ETH_USDT", "days": 30, "label": "ETH MEXC Futures 30d"},
+]
+STRESS_TEST2_WORKERS = 3
+STRESS_TEST2_MARKET_TYPE = "futures"
+
+
 def _asset_key_for_symbol(symbol: str) -> str | None:
     s = symbol.upper().replace("-", "_")
     if s.startswith(("XAU", "GOLD", "XAUT", "PAXG")):
@@ -1930,6 +1944,265 @@ async def build_stress_test_archive(
     await reporter.report(100, f"архив готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}, parquet={len(candle_files)}/{len(STRESS_TEST_SPECS)}", force=True)
     logger.info("Stress Test archive ready: %s size=%s files=%s warnings=%s", zip_path, human_bytes(zip_path.stat().st_size), candle_files, warnings)
     return zip_path
+
+
+
+async def build_stress_test2_archive(
+    settings: Settings,
+    logger: logging.Logger,
+    progress_cb: ProgressCallback | None = None,
+) -> Path:
+    """Build Stress Test 2: MEXC Futures 30d parquet-only archive.
+
+    Unlike the long Stress Test, this mode is tolerant per-symbol: if a futures
+    contract is unavailable or the 30d 1m history is incomplete, that symbol is
+    skipped and the archive is still sent with all successfully collected parquet files.
+    Old scan/montage/intraday modes and task files are not touched.
+    """
+    utc_build_stamp = utc_stamp()
+    day_stamp = _moscow_day_month_stamp()
+    created_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+    build_dir = settings.work_dir / f"stress_test2_build_{utc_build_stamp}" / "multi_test2"
+    safe_rmtree(build_dir)
+    candles_out = build_dir / "candles"
+    meta_out = build_dir / "meta"
+    candles_out.mkdir(parents=True, exist_ok=True)
+    meta_out.mkdir(parents=True, exist_ok=True)
+
+    reporter = PercentReporter("Stress Test 2", progress_cb)
+    await reporter.report(0, "старт: 8 MEXC Futures активов, 1m parquet за 30d, 3 потока", force=True)
+    logger.info("Starting Stress Test 2 MEXC Futures archive build base_url=%s specs=%s workers=%s", settings.mexc_base_url, STRESS_TEST2_SPECS, STRESS_TEST2_WORKERS)
+
+    interval = "1m"
+    interval_ms = INTERVAL_MS[interval]
+    client = MexcSpotClient(settings.mexc_base_url, logger, STRESS_TEST2_MARKET_TYPE)
+    try:
+        await reporter.report(5, f"проверяю MEXC Futures endpoint {settings.mexc_base_url}")
+        ping_ok = await client.ping()
+        server_time = await client.server_time()
+        server_ms = int(server_time["serverTime"])
+        try:
+            exchange_info = await client.exchange_info([spec["symbol"] for spec in STRESS_TEST2_SPECS])
+        except Exception as exc:  # noqa: BLE001
+            exchange_info = {"market_type": STRESS_TEST2_MARKET_TYPE, "symbols": [], "warning": str(exc)}
+            logger.warning("Stress Test 2 exchange_info failed, continuing downloads: %s", exc)
+    finally:
+        await client.close()
+
+    total_expected = 0
+    windows: dict[str, DownloadWindow] = {}
+    for spec in STRESS_TEST2_SPECS:
+        symbol = str(spec["symbol"])
+        window = DownloadWindow.last_days_from_end_ms(int(spec["days"]), server_ms, interval_ms)
+        windows[symbol] = window
+        total_expected += max(1, int((window.end_ms - window.start_ms) // interval_ms))
+
+    await reporter.report(10, f"MEXC Futures доступен, начинаю сбор: {STRESS_TEST2_WORKERS} потока")
+
+    progress_lock = asyncio.Lock()
+    states: dict[str, dict[str, Any]] = {
+        str(spec["symbol"]): {
+            "rows": 0,
+            "expected": max(1, int((windows[str(spec["symbol"])].end_ms - windows[str(spec["symbol"])].start_ms) // interval_ms)),
+            "done": False,
+            "failed": False,
+            "skipped": False,
+        }
+        for spec in STRESS_TEST2_SPECS
+    }
+    results: dict[str, dict[str, Any]] = {}
+    candle_files: dict[str, str] = {}
+    row_counts: dict[str, int] = {}
+    warnings: list[str] = []
+    skipped_symbols: list[str] = []
+
+    async def report_global(symbol: str, rows: int, expected: int, note: str = "") -> None:
+        async with progress_lock:
+            state = states[symbol]
+            state["rows"] = max(int(rows), int(state.get("rows", 0) or 0))
+            state["expected"] = max(1, int(expected))
+            loaded = sum(min(int(s.get("rows", 0) or 0), int(s.get("expected", 1) or 1)) for s in states.values())
+            done_count = sum(1 for s in states.values() if s.get("done"))
+            skipped_count = sum(1 for s in states.values() if s.get("skipped") or s.get("failed"))
+            pct = 10.0 + min(85.0, (loaded / max(1, total_expected)) * 85.0)
+            status = f"готово {done_count}/{len(STRESS_TEST2_SPECS)}, пропущено {skipped_count}; {symbol}: {rows:,}/{expected:,} свечей"
+            if note:
+                status = f"{status}; {note}"
+            await reporter.report(pct, status)
+
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    for spec in STRESS_TEST2_SPECS:
+        queue.put_nowait(dict(spec))
+
+    async def worker(worker_id: int) -> None:
+        worker_client = MexcSpotClient(settings.mexc_base_url, logger, STRESS_TEST2_MARKET_TYPE)
+        try:
+            while True:
+                try:
+                    spec = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                symbol = str(spec["symbol"])
+                days = int(spec["days"])
+                label = str(spec.get("label") or symbol)
+                window = windows[symbol]
+                expected_rows = max(1, int((window.end_ms - window.start_ms) // interval_ms))
+                try:
+                    logger.info("Stress Test 2 worker=%s downloading symbol=%s days=%s", worker_id, symbol, days)
+                    await report_global(symbol, 0, expected_rows, f"worker {worker_id} старт {label}")
+
+                    async def symbol_progress(symbol_pct: float, rows: int, expected: int, symbol_name: str = symbol) -> None:
+                        await report_global(symbol_name, rows, expected, f"worker {worker_id}")
+
+                    df = await worker_client.download_klines_dataframe_backward(
+                        symbol,
+                        interval,
+                        window,
+                        progress_every_requests=5,
+                        progress_cb=symbol_progress,
+                    )
+                    if df.empty:
+                        raise RuntimeError(f"No data downloaded for {symbol}")
+
+                    actual_days_by_rows = len(df) * interval_ms / (24 * 60 * 60 * 1000)
+                    coverage = len(df) / expected_rows
+                    if coverage < 0.95:
+                        raise RuntimeError(
+                            f"incomplete history {len(df):,}/{expected_rows:,} candles "
+                            f"({coverage:.1%}), ~{actual_days_by_rows:.1f} days inside requested {days}d"
+                        )
+
+                    out_file = candles_out / f"{symbol}_{interval}_{days}d.parquet"
+                    save_dataframe_parquet(df, out_file)
+                    try:
+                        save_dataframe_parquet(df, settings.candles_dir / out_file.name)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("Stress Test 2 local candles cache copy failed symbol=%s: %s", symbol, exc)
+                    row_counts[symbol] = len(df)
+                    candle_files[symbol] = str(Path("candles") / out_file.name)
+                    results[symbol] = {
+                        "symbol": symbol,
+                        "label": label,
+                        "requested_days": days,
+                        "window": window.as_dict(),
+                        "expected_rows": expected_rows,
+                        "rows": len(df),
+                        "actual_days_by_rows": round(actual_days_by_rows, 3),
+                        "coverage_ratio": round(coverage, 6),
+                        "status": "included",
+                        "file": candle_files[symbol],
+                    }
+                    async with progress_lock:
+                        states[symbol]["rows"] = len(df)
+                        states[symbol]["done"] = True
+                    await report_global(symbol, len(df), expected_rows, "готово")
+                except Exception as exc:  # noqa: BLE001
+                    msg = f"{symbol}: skipped: {exc}"
+                    warnings.append(msg)
+                    skipped_symbols.append(symbol)
+                    results[symbol] = {
+                        "symbol": symbol,
+                        "label": label,
+                        "requested_days": days,
+                        "window": window.as_dict(),
+                        "expected_rows": expected_rows,
+                        "rows": 0,
+                        "status": "skipped",
+                        "error": str(exc),
+                    }
+                    async with progress_lock:
+                        states[symbol]["failed"] = True
+                        states[symbol]["skipped"] = True
+                        states[symbol]["done"] = True
+                    logger.exception("Stress Test 2 worker=%s symbol=%s skipped: %s", worker_id, symbol, exc)
+                    await report_global(symbol, 0, expected_rows, "пропущен, продолжаю остальные")
+                finally:
+                    queue.task_done()
+        finally:
+            await worker_client.close()
+
+    workers = [asyncio.create_task(worker(i + 1)) for i in range(STRESS_TEST2_WORKERS)]
+    await asyncio.gather(*workers)
+
+    if not candle_files:
+        raise RuntimeError("Stress Test 2: ни один parquet-файл не собран. Проверь MEXC Futures symbols/API/log_full.")
+
+    await reporter.report(95, "пишу manifest/meta без task-файлов")
+    status_lines = [
+        f"Stress Test 2 archive created: {created_msk} UTC+3/MSK",
+        "MEXC Futures 1m 30d parquet-only archive.",
+        "If a symbol is unavailable or incomplete, it is skipped and listed below.",
+        "No task files are included.",
+        "",
+        "Files:",
+    ]
+    for spec in STRESS_TEST2_SPECS:
+        symbol = str(spec["symbol"])
+        result = results.get(symbol, {})
+        if result.get("file"):
+            status_lines.append(f"- {symbol}: INCLUDED — {result.get('rows'):,} rows, {result.get('actual_days_by_rows')} days, {result.get('file')}")
+        else:
+            status_lines.append(f"- {symbol}: SKIPPED — {result.get('error', 'unknown')}")
+    if warnings:
+        status_lines.append("")
+        status_lines.append("Warnings / skipped:")
+        status_lines.extend(f"- {w}" for w in warnings)
+
+    (build_dir / "status.txt").write_text("\n".join(status_lines) + "\n", encoding="utf-8")
+    write_json(meta_out / "exchange_info.json", exchange_info)
+    write_json(meta_out / "api_status.json", {
+        "mexc_futures_public_ping_ok": ping_ok,
+        "mexc_server_time": server_time,
+        "note": "Stress Test 2 uses public MEXC Futures market-data endpoints only. No trading endpoints are used.",
+    })
+    manifest = {
+        "archive_type": "multi_test2_parquet_futures_30d",
+        "collector_version": settings.app_version,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "created_at_utc_plus_3_msk": created_msk,
+        "telegram_archive_stamp_utc_plus_3_day_month": day_stamp,
+        "exchange": "MEXC_FUTURES_PUBLIC",
+        "base_url": settings.mexc_base_url,
+        "market_type": STRESS_TEST2_MARKET_TYPE,
+        "base_interval": interval,
+        "parallel_workers": STRESS_TEST2_WORKERS,
+        "request_policy": {
+            "endpoint": "/api/v1/contract/kline/{symbol}",
+            "chunk_limit_1m_candles": 2000,
+            "worker_count": STRESS_TEST2_WORKERS,
+            "per_worker_min_request_interval_sec": 1.25,
+            "symbol_policy": "Exact MEXC Futures symbols only. Missing/incomplete symbols are skipped for Stress Test 2.",
+            "rate_limit_handling": "Market-data client retries on HTTP/app-level rate limit responses; detailed errors are written to /log_full.",
+        },
+        "requested": STRESS_TEST2_SPECS,
+        "symbols": [spec["symbol"] for spec in STRESS_TEST2_SPECS],
+        "successful_symbols": sorted(candle_files.keys()),
+        "skipped_symbols": sorted(set(skipped_symbols)),
+        "candle_files": candle_files,
+        "row_counts": row_counts,
+        "results": results,
+        "warnings": warnings,
+        "instruction_files": [],
+        "task_files_policy": "No task.txt/setup_format.txt/intraday_task.txt files are created or modified by Stress Test 2.",
+    }
+    write_json(build_dir / "manifest.json", manifest)
+
+    await reporter.report(98, "упаковываю multi_test2 zip")
+    zip_path = settings.exports_dir / f"multi_test2-{day_stamp}.zip"
+    zip_directory(build_dir, zip_path)
+    write_json(settings.exports_dir / f"multi_test2-{day_stamp}.sha256.json", {
+        "file": zip_path.name,
+        "sha256": file_sha256(zip_path),
+        "size_bytes": zip_path.stat().st_size,
+        "size_human": human_bytes(zip_path.stat().st_size),
+        "created_at_utc_plus_3_msk": created_msk,
+        "successful_symbols": sorted(candle_files.keys()),
+        "skipped_symbols": sorted(set(skipped_symbols)),
+    })
+    await reporter.report(100, f"архив готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}, parquet={len(candle_files)}/{len(STRESS_TEST2_SPECS)}, пропущено={len(set(skipped_symbols))}", force=True)
+    logger.info("Stress Test 2 archive ready: %s size=%s files=%s skipped=%s warnings=%s", zip_path, human_bytes(zip_path.stat().st_size), candle_files, sorted(set(skipped_symbols)), warnings)
+    return zip_path
+
 
 def build_logs_archive(settings: Settings, logger: logging.Logger) -> Path:
     stamp = utc_stamp()

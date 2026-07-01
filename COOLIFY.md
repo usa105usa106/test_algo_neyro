@@ -130,3 +130,9 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Stress Test now uses Binance Spot `/api/v3/klines` backward chunked collection for long 1m history.
 - If any requested symbol returns less than 95% of the requested candles, the bot raises an error, writes details to `/log_full`, and does not send a misleading small archive.
 - Old scan/intraday/task files remain unchanged.
+
+### 39_full Stress Test 2 update
+- Added `🧪 Stress Test 2` button.
+- Stress Test 2 collects MEXC Futures 1m parquet for 30d: SOL/XRP/ADA/XAUT/XAU/SILVER/BTC/ETH.
+- Missing or incomplete symbols are skipped; successful parquet files are still zipped and sent.
+- Large `multi_test2-DDMM.zip` files are split into binary `.partNNN` pieces, same reassembly principle as the existing bot.
