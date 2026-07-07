@@ -7,6 +7,9 @@ import numpy as np
 import pandas as pd
 
 
+MIN_INTRADAY_GREEN_QUALITY = 68
+
+
 def _fmt(value: float, digits: int = 2) -> str:
     if not np.isfinite(value):
         return "n/a"
@@ -150,7 +153,15 @@ def _structure_score(df: pd.DataFrame, direction: str) -> int:
     return int(_clamp(-norm_slope * 30 + (15 if ll else 0) + (15 if lh else 0), 0, 40))
 
 
-def _rejection_confirmation(df_1m: pd.DataFrame, df_15m: pd.DataFrame, direction: str, vwap: float) -> bool:
+def _closed_frame(df: pd.DataFrame, latest_ts: pd.Timestamp, rule: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    latest = pd.Timestamp(latest_ts)
+    delta = pd.Timedelta(rule)
+    return df[df.index + delta <= latest]
+
+
+def _rejection_confirmation(df_1m: pd.DataFrame, df_15m: pd.DataFrame, direction: str, vwap: float, latest_ts: pd.Timestamp | None = None) -> bool:
     """Lightweight confirmation gate for Intraday MANUAL_REVIEW.
 
     It prevents passive limit ideas from being promoted to green just because price is
@@ -158,6 +169,10 @@ def _rejection_confirmation(df_1m: pd.DataFrame, df_15m: pd.DataFrame, direction
     closed 1m/15m candles. Otherwise the decision stays WAIT_CONFIRMATION.
     """
     if df_1m.empty or df_15m.empty or not np.isfinite(vwap):
+        return False
+    if latest_ts is not None:
+        df_15m = _closed_frame(df_15m, latest_ts, "15min")
+    if df_15m.empty:
         return False
     recent_1m = df_1m.tail(10)
     last15 = df_15m.iloc[-1]
@@ -181,9 +196,77 @@ def _rejection_confirmation(df_1m: pd.DataFrame, df_15m: pd.DataFrame, direction
     return touched_zone and green_or_above and (lower_wick >= 0.20 or close > vwap)
 
 
+def _symbol_base(symbol: str) -> str:
+    return symbol.upper().replace("_USDT", "")
+
+
+def _trend_pullback_min_edge(symbol: str) -> int:
+    base = _symbol_base(symbol)
+    if base in {"BTC", "ETH", "SOL"}:
+        return 10
+    if base in {"XAU", "XAUT", "GOLD", "SILVER"}:
+        return 14
+    if base in {"USOIL", "OIL"}:
+        return 12
+    if base in {"XRP", "ADA", "BCH", "POL", "MATIC", "DOT", "LINK", "AVAX", "BNB", "LTC", "DOGE"}:
+        return 12
+    return 13
+
+
+def _day_edge_room_ok(symbol: str, direction: str, entry_ref: float, day_high: float, day_low: float, atr15: float) -> tuple[bool, str | None]:
+    """Soft RR sanity check for green Intraday A.
+
+    It blocks only obvious middle-of-range entries where the nearest day edge is
+    very close compared with structural risk to the opposite edge. It is deliberately
+    softer than the first fix so Intraday is not killed.
+    """
+    if not all(np.isfinite(x) for x in [entry_ref, day_high, day_low]) or day_high <= day_low:
+        return True, None
+    base = _symbol_base(symbol)
+    if base in {"BTC", "ETH", "SOL"}:
+        min_rr_to_edge = 0.25
+    elif base in {"XAU", "XAUT", "GOLD", "SILVER"}:
+        min_rr_to_edge = 0.35
+    else:
+        min_rr_to_edge = 0.30
+    buffer = max(_data_tolerance(symbol, entry_ref), float(atr15 or 0.0) * 0.10)
+    if direction == "long":
+        risk = entry_ref - day_low
+        room = day_high - entry_ref
+        if risk > buffer and room <= buffer:
+            return False, f"entry {_fmt(entry_ref)} уже у day high {_fmt(day_high)}; нужен breakout+retest, не догонять"
+        if risk > buffer and room / risk < min_rr_to_edge:
+            return False, f"day high {_fmt(day_high)} слишком близко к entry {_fmt(entry_ref)} относительно риска до day low {_fmt(day_low)}"
+    else:
+        risk = day_high - entry_ref
+        room = entry_ref - day_low
+        if risk > buffer and room <= buffer:
+            return False, f"entry {_fmt(entry_ref)} уже у day low {_fmt(day_low)}; нужен breakdown+retest, не догонять"
+        if risk > buffer and room / risk < min_rr_to_edge:
+            return False, f"day low {_fmt(day_low)} слишком близко к entry {_fmt(entry_ref)} относительно риска до day high {_fmt(day_high)}"
+    return True, None
+
+
+def _htf_trend_ok(symbol: str, direction: str, df_4h: pd.DataFrame) -> tuple[bool, str | None]:
+    """Do not promote Trend Pullback to green directly against strong 4H structure.
+
+    This is a soft higher-timeframe sanity gate, not a trade killer: it only blocks
+    obvious 4H opposition. Neutral/mixed 4H still passes so Intraday does not go dry.
+    """
+    if df_4h.empty or len(df_4h) < 8:
+        return True, None
+    long4 = _structure_score(df_4h, "long")
+    short4 = _structure_score(df_4h, "short")
+    if direction == "long" and short4 >= long4 + 10 and short4 >= 25:
+        return False, f"4H против LONG: 4H short_score {short4} > long_score {long4}; нужен новый reclaim/слом структуры"
+    if direction == "short" and long4 >= short4 + 10 and long4 >= 25:
+        return False, f"4H против SHORT: 4H long_score {long4} > short_score {short4}; нужен breakdown/ретест, не ранний шорт"
+    return True, None
+
+
 def _data_tolerance(symbol: str, price: float) -> float:
     base = symbol.upper().replace("_USDT", "")
-    if base in {"XAU", "GOLD"}:
+    if base in {"XAU", "XAUT", "GOLD"}:
         return 1.0
     if base in {"USOIL", "OIL"}:
         return 0.05
@@ -194,6 +277,19 @@ def _data_tolerance(symbol: str, price: float) -> float:
     if base == "ETH":
         return max(0.5, price * 0.0002)
     return max(1e-8, abs(price) * 0.0002)
+
+
+def _sweep_penetration_tolerance(symbol: str, price: float, atr15: float) -> float:
+    """Minimum real penetration beyond a prior edge for a sweep.
+
+    Data tolerance is intentionally large for some symbols because it is also used
+    to compare chart/report levels. For sweep detection we need a smaller, but
+    still non-zero, buffer so equal highs/lows or tiny tick touches do not become
+    green reversal candidates.
+    """
+    base_tick = _data_tolerance(symbol, price) * 0.25
+    atr_part = float(atr15 or 0.0) * 0.01
+    return max(1e-8, base_tick, atr_part)
 
 
 @dataclass(frozen=True)
@@ -310,8 +406,12 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     }
     df_15m = frames["15m"]
     df_1h = frames["1h"]
+    df_4h = frames["4h"]
     price = float(df_1m["Close"].iloc[-1])
     latest_ts = df_1m.index[-1]
+    df_15m_closed = _closed_frame(df_15m, latest_ts, "15min")
+    if df_15m_closed.empty:
+        df_15m_closed = df_15m
     latest_msk = latest_ts.tz_convert("Europe/Moscow")
     day_start_msk = latest_msk.normalize()
     day_start_utc = day_start_msk.tz_convert("UTC")
@@ -354,7 +454,7 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
             )
     data_warning = data_warning_reason is not None
 
-    buyer, seller, absorption = _pressure_scores(df_1m, df_15m, vwap)
+    buyer, seller, absorption = _pressure_scores(df_1m, df_15m_closed, vwap)
     atr15 = _atr(df_15m, 14)
     atr_pct = atr15 / price * 100 if price else 0.0
     dist_vwap_pct = _safe_pct(price, vwap) if np.isfinite(vwap) else 0.0
@@ -366,7 +466,7 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     extended_up = dist_vwap_pct > max(0.25, atr_pct * 1.2)
     extended_down = dist_vwap_pct < -max(0.25, atr_pct * 1.2)
 
-    recent_15 = df_15m.tail(4)
+    recent_15 = df_15m_closed.tail(4)
     impulse_up = False
     impulse_down = False
     if len(recent_15) >= 2 and atr15 > 0:
@@ -378,16 +478,25 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     late_short = (35 if near_24h_low else 0) + (25 if extended_down else 0) + (20 if impulse_down else 0)
     late_risk = int(_clamp(max(late_long, late_short) + max(0, absorption - 65) * 0.4))
 
-    # Sweep detection: pierce day/24h extremum and return back inside.
-    last_15 = df_15m.tail(2)
+    # Sweep detection: use only a CLOSED 15m candle and require real penetration.
+    # Do not promote a live/unfinished 15m wick or an equal-high/equal-low touch
+    # to Intraday A before the candle closes.
+    last_15 = df_15m_closed.tail(2)
     sweep_up = False
     sweep_down = False
     if len(last_15) >= 1:
         candle = last_15.iloc[-1]
-        prev_24h_high = float(frames["1m"].iloc[:-1]["High"].max()) if len(frames["1m"]) > 2 else high_24h
-        prev_24h_low = float(frames["1m"].iloc[:-1]["Low"].min()) if len(frames["1m"]) > 2 else low_24h
-        sweep_up = bool(candle["High"] >= prev_24h_high and candle["Close"] < prev_24h_high)
-        sweep_down = bool(candle["Low"] <= prev_24h_low and candle["Close"] > prev_24h_low)
+        candle_start = pd.Timestamp(candle.name)
+        hist_before_sweep = frames["1m"][frames["1m"].index < candle_start]
+        if len(hist_before_sweep) > 2:
+            prev_24h_high = float(hist_before_sweep["High"].max())
+            prev_24h_low = float(hist_before_sweep["Low"].min())
+        else:
+            prev_24h_high = high_24h
+            prev_24h_low = low_24h
+        sweep_buffer = _sweep_penetration_tolerance(symbol, price, atr15)
+        sweep_up = bool(candle["High"] > prev_24h_high + sweep_buffer and candle["Close"] < prev_24h_high)
+        sweep_down = bool(candle["Low"] < prev_24h_low - sweep_buffer and candle["Close"] > prev_24h_low)
 
     trap_risk = int(_clamp(absorption * 0.55 + late_risk * 0.35 + (25 if sweep_up or sweep_down else 0)))
 
@@ -435,12 +544,19 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     strict_late_ok = late_risk <= 35
     long_pressure_edge = buyer - seller
     short_pressure_edge = seller - buyer
-    long_confirmed = _rejection_confirmation(df_1m, df_15m, "long", vwap)
-    short_confirmed = _rejection_confirmation(df_1m, df_15m, "short", vwap)
+    long_confirmed = _rejection_confirmation(df_1m, df_15m, "long", vwap, latest_ts)
+    short_confirmed = _rejection_confirmation(df_1m, df_15m, "short", vwap, latest_ts)
+    long_edge_min = _trend_pullback_min_edge(symbol)
+    short_edge_min = _trend_pullback_min_edge(symbol)
+    sweep_edge_min = max(10, _trend_pullback_min_edge(symbol) - 2)
+    long_htf_ok, long_htf_reason = _htf_trend_ok(symbol, "long", df_4h)
+    short_htf_ok, short_htf_reason = _htf_trend_ok(symbol, "short", df_4h)
+    long_room_ok, long_room_reason = _day_edge_room_ok(symbol, "long", price, day_high, day_low, atr15)
+    short_room_ok, short_room_reason = _day_edge_room_ok(symbol, "short", price, day_high, day_low, atr15)
     pullback_watch_long = regime == "TREND_LONG" and near_vwap and long_score >= 70 and long_pressure_edge >= 8 and trap_risk <= 45 and late_risk <= 45
     pullback_watch_short = regime == "TREND_SHORT" and near_vwap and short_score >= 70 and short_pressure_edge >= 8 and trap_risk <= 45 and late_risk <= 45
-    pullback_ok_long = pullback_watch_long and long_score >= 75 and long_score >= short_score + 25 and strict_trap_ok and strict_late_ok and long_confirmed and not data_warning
-    pullback_ok_short = pullback_watch_short and short_score >= 75 and short_score >= long_score + 25 and strict_trap_ok and strict_late_ok and short_confirmed and not data_warning
+    pullback_ok_long = pullback_watch_long and long_score >= 75 and long_score >= short_score + 25 and long_pressure_edge >= long_edge_min and strict_trap_ok and strict_late_ok and long_confirmed and long_room_ok and long_htf_ok and not data_warning
+    pullback_ok_short = pullback_watch_short and short_score >= 75 and short_score >= long_score + 25 and short_pressure_edge >= short_edge_min and strict_trap_ok and strict_late_ok and short_confirmed and short_room_ok and short_htf_ok and not data_warning
 
     if regime == "TREND_LONG":
         allowed = "LONG_ONLY"
@@ -451,7 +567,14 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
             archive_reason = "Intraday A Trend Pullback LONG для ручной проверки"
         elif pullback_watch_long:
             decision = "WAIT_CONFIRMATION"
-            comment = "Лонг-сценарий есть, но подтверждения недостаточно. Ордер заранее не ставить: ждать 5m/15m rejection/hold."
+            if long_pressure_edge < long_edge_min:
+                comment = f"Лонг-сценарий есть, но pressure edge слабый (+{long_pressure_edge}, нужно >= {long_edge_min}). Ордер заранее не ставить."
+            elif not long_room_ok:
+                comment = f"Лонг-сценарий есть, но RR/room слабый: {long_room_reason}. Ждать пробой/ретест, не входить из середины."
+            elif not long_htf_ok:
+                comment = f"Лонг-сценарий есть, но старший 4H фильтр против: {long_htf_reason}. Ордер заранее не ставить."
+            else:
+                comment = "Лонг-сценарий есть, но подтверждения недостаточно. Ордер заранее не ставить: ждать 5m/15m rejection/hold."
         else:
             decision = "WAIT_PULLBACK"
             comment = "Лонг-направление есть, но вход сейчас не созрел/может быть поздним. Ждать откат и подтверждение."
@@ -464,7 +587,14 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
             archive_reason = "Intraday A Trend Pullback SHORT для ручной проверки"
         elif pullback_watch_short:
             decision = "WAIT_CONFIRMATION"
-            comment = "Шорт-сценарий есть, но подтверждения недостаточно. Ордер заранее не ставить: ждать 5m/15m rejection/hold."
+            if short_pressure_edge < short_edge_min:
+                comment = f"Шорт-сценарий есть, но pressure edge слабый (+{short_pressure_edge}, нужно >= {short_edge_min}). Ордер заранее не ставить."
+            elif not short_room_ok:
+                comment = f"Шорт-сценарий есть, но RR/room слабый: {short_room_reason}. Ждать пробой/ретест, не входить из середины."
+            elif not short_htf_ok:
+                comment = f"Шорт-сценарий есть, но старший 4H фильтр против: {short_htf_reason}. Ордер заранее не ставить."
+            else:
+                comment = "Шорт-сценарий есть, но подтверждения недостаточно. Ордер заранее не ставить: ждать 5m/15m rejection/hold."
         else:
             decision = "WAIT_PULLBACK"
             comment = "Шорт-направление есть, но вход сейчас не созрел/может быть поздним. Ждать откат и подтверждение."
@@ -472,22 +602,22 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         playbook = "Sweep Reversal"
         if sweep_down:
             allowed = "LONG_ONLY_AFTER_CONFIRMATION"
-            if buyer >= seller + 10 and trap_risk <= 35 and late_risk <= 35 and long_confirmed and not data_warning:
+            if buyer >= seller + sweep_edge_min and trap_risk <= 35 and late_risk <= 35 and long_confirmed and not data_warning:
                 decision = "MANUAL_REVIEW"
                 comment = "Sweep down Intraday A: low сняли, цена вернулась, выкуп подтверждён. Проверить только LIMIT после подтверждения."
                 archive_reason = "Intraday A Sweep down reversal для ручной проверки"
             else:
                 decision = "WAIT_SWEEP_CONFIRMATION"
-                comment = "Похоже на sweep вниз, но подтверждения ещё мало. Ордер заранее не ставить, ждать закрытие/закрепление."
+                comment = f"Похоже на sweep вниз, но подтверждения/pressure ещё мало (edge +{buyer - seller}, нужно >= {sweep_edge_min}). Ордер заранее не ставить, ждать закрытие/закрепление."
         elif sweep_up:
             allowed = "SHORT_ONLY_AFTER_CONFIRMATION"
-            if seller >= buyer + 10 and trap_risk <= 35 and late_risk <= 35 and short_confirmed and not data_warning:
+            if seller >= buyer + sweep_edge_min and trap_risk <= 35 and late_risk <= 35 and short_confirmed and not data_warning:
                 decision = "MANUAL_REVIEW"
                 comment = "Sweep up Intraday A: high сняли, цена вернулась, продавец подтверждён. Проверить только LIMIT после подтверждения."
                 archive_reason = "Intraday A Sweep up reversal для ручной проверки"
             else:
                 decision = "WAIT_SWEEP_CONFIRMATION"
-                comment = "Похоже на sweep вверх, но подтверждения ещё мало. Ордер заранее не ставить, ждать закрытие/закрепление."
+                comment = f"Похоже на sweep вверх, но подтверждения/pressure ещё мало (edge +{seller - buyer}, нужно >= {sweep_edge_min}). Ордер заранее не ставить, ждать закрытие/закрепление."
     elif regime == "TRANSITION":
         allowed = "WAIT"
         playbook = "none"
@@ -549,6 +679,15 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
             100,
         ))
     else:
+        quality_score = 0
+
+    if decision == "MANUAL_REVIEW" and quality_score < MIN_INTRADAY_GREEN_QUALITY:
+        decision = "WAIT_CONFIRMATION"
+        archive_reason = None
+        comment = (
+            f"Кандидат есть, но rank {quality_score} ниже зелёного порога {MIN_INTRADAY_GREEN_QUALITY}. "
+            "Ордер заранее не ставить, ждать следующий скан/дополнительное подтверждение."
+        )
         quality_score = 0
 
     report = IntradayReport(

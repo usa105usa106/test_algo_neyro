@@ -33,18 +33,24 @@ Final answer format:
 - End with only 1-3 short sentences explaining why.
 
 Decision rules:
-- Real trade only if clean Intraday A: clear regime + clear location + confirmation/rejection/hold + acceptable RR + no obvious stop magnet.
+- report.decision=MANUAL_REVIEW means "candidate for human check", NOT automatic permission to trade. You may reject it.
+- Real trade only if clean Intraday A: clear regime + clear location + CLOSED 1m/15m confirmation/rejection/hold + acceptable RR + no obvious stop magnet + no strong opposite 4H structure.
 - B / B+ / A- are WAIT only, not tradable.
 - If confirmation is missing, answer **WAIT — observation only, no entry** and write WAIT_CONFIRMATION.
-- Do not place passive limit orders just because price is near a zone. Need 5m/15m rejection/hold or sweep confirmation.
+- Do not use the current unfinished 15m/1h/4h candle as confirmation. It is context only.
+- Do not place passive limit orders just because price is near VWAP/zone. Need a closed 1m/15m reclaim/hold or real sweep confirmation.
+- Sweep means real closed-candle penetration beyond the prior 24h/day edge and return back inside. Equal high/low touch is not a sweep.
+- If rank_score/quality_score is below 68, default to WAIT. For 68-69, be extra strict and allow Intraday A only with an obvious closed sweep/reclaim/hold and clean RR.
 - Reject if report/montage/CSV materially disagree or DATA_WARNING exists.
-- Reject if trend just flipped or is transitional.
+- Reject if trend just flipped, is transitional, or 4H structure is strongly opposite to the intended direction.
 - Do not chase after impulse. If target/low/high was reached before entry, setup is missed.
 
 Stop and RR rules:
 - Do not give micro-invalidation unless the intraday_task explicitly says micro scalp. This task is not micro scalp.
-- SL must be structural: beyond day high/low, 24h high/low, nearest liquidity magnet, and obvious sweep zone.
+- SL must be structural: beyond the actual setup invalidation swing / day edge / nearest liquidity magnet / obvious sweep zone.
+- Do NOT automatically force SL behind a far 24h high/low if that makes the trade a rescue swing instead of intraday. If only valid SL is far 24h extreme and RR is bad, answer WAIT.
 - It is forbidden to place SL inside an obvious magnet. If nearby high/low zone is 4088-4090, SL cannot be 4085-4088; SL must be above the zone, e.g. 4091-4095.
+- If the nearest day high/low is too close to entry compared with structural risk, do not force the trade; answer WAIT / observation only and wait for breakout+retest.
 - If structural SL makes RR bad, do not force the trade; answer WAIT / observation only.
 - TP must be calculated from the real SL risk. Wide SL requires wider TP. Micro-TPs with a wide SL are forbidden.
 - Before final answer, check: is SL beyond structure? do TPs match real risk? If not, answer WAIT / observation only.
@@ -163,7 +169,7 @@ def build_intraday_candidates_archive(
         "chart_files": chart_files,
         "candle_files": candle_files,
         "instruction_files": ["intraday_task.txt", "status.txt", "reports/*/report.json"],
-        "answer_rule_for_chatgpt": "Use only this archive data. Brief Russian answer. Maximum one real setup per archive, Intraday A only; B/B+/A- => WAIT observation only. LIMIT only. Bold Entry/Stop/TP numbers. Use midpoint for ranges. Require 5m/15m rejection/hold. SL must be structural beyond day/24h high-low and liquidity magnets; no micro-invalidation. If structural SL ruins RR, answer WAIT.",
+        "answer_rule_for_chatgpt": "Use only this archive data. Brief Russian answer. report.decision=MANUAL_REVIEW is only a candidate for human check, not permission. Maximum one real setup per archive, Intraday A only; B/B+/A- => WAIT observation only. LIMIT only. Bold Entry/Stop/TP numbers. Use midpoint for ranges. Require CLOSED 1m/15m rejection/hold or sweep reclaim; unfinished candles are context only; reject strong opposite 4H structure. If rank_score/quality_score < 68, default WAIT; 68-69 requires extra strict closed confirmation + clean RR. SL must be structural beyond actual setup invalidation / nearest liquidity magnet; do not automatically force far 24h high/low. If nearest day edge is too close or structural SL ruins RR, answer WAIT.",
         "storage_policy": "One zip per scan with all green MANUAL_REVIEW candidates only. Fresh 30d download in memory; no parquet/cache is used by Intraday.",
     }
     write_json(build_dir / "manifest.json", manifest)

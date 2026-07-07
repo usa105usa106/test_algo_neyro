@@ -47,6 +47,7 @@ BTN_STRESS_TEST2 = "stress_test2"
 BTN_SCAN_PREFIX = "scan:"
 APLUS_SYMBOL_COOLDOWN_SEC = 45 * 60
 INTRADAY_DEFAULT_SYMBOLS = ["BTC_USDT", "ETH_USDT", "XAU_USDT", "SILVER_USDT", "USOIL_USDT"]
+INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC = 20 * 60
 
 
 _INTRADAY_DECISION_ORDER = {
@@ -1424,21 +1425,32 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
 
     if green:
         runtime.logger.info("Intraday green candidates found count=%s symbols=%s", len(green), [r.symbol for r in green])
-        await _edit_intraday_status(context, chat_id, runtime, _intraday_candidates_progress_text(green))
-        await asyncio.sleep(0.5)
-        await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(1, 3))
-        zip_path = await asyncio.to_thread(build_intraday_candidates_archive, runtime.settings, runtime.logger, green, data_by_symbol)
-        if zip_path is not None:
-            await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(2, 3))
-            runtime.last_export = zip_path
-            archive_name = zip_path.name
-            runtime.intraday_last_signature = "|".join(sorted(r.symbol for r in green))
-            runtime.intraday_last_archive_sent_at = time.time()
-            await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(3, 3, ok=True))
-            await asyncio.sleep(0.5)
+        green_signature = "|".join(sorted(f"{r.symbol}:{r.regime}:{r.playbook}:{r.allowed_direction}" for r in green))
+        same_green = runtime.intraday_last_signature == green_signature
+        duplicate_cooldown_left = INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC - (time.time() - runtime.intraday_last_archive_sent_at)
+        if same_green and duplicate_cooldown_left > 0:
+            archive_name = f"дубль не отправлен: те же зелёные кандидаты, cooldown ещё {int(duplicate_cooldown_left // 60) + 1} мин"
+            runtime.logger.info(
+                "Intraday duplicate archive suppressed signature=%s cooldown_left=%.1fs",
+                green_signature,
+                duplicate_cooldown_left,
+            )
         else:
-            archive_name = "ошибка: зелёные есть, но архив не собран — см /log_full"
-            runtime.logger.error("Intraday green candidates found, but archive builder returned None symbols=%s", [r.symbol for r in green])
+            await _edit_intraday_status(context, chat_id, runtime, _intraday_candidates_progress_text(green))
+            await asyncio.sleep(0.5)
+            await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(1, 3))
+            zip_path = await asyncio.to_thread(build_intraday_candidates_archive, runtime.settings, runtime.logger, green, data_by_symbol)
+            if zip_path is not None:
+                await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(2, 3))
+                runtime.last_export = zip_path
+                archive_name = zip_path.name
+                runtime.intraday_last_signature = green_signature
+                runtime.intraday_last_archive_sent_at = time.time()
+                await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(3, 3, ok=True))
+                await asyncio.sleep(0.5)
+            else:
+                archive_name = "ошибка: зелёные есть, но архив не собран — см /log_full"
+                runtime.logger.error("Intraday green candidates found, but archive builder returned None symbols=%s", [r.symbol for r in green])
     else:
         runtime.logger.info("Intraday cycle no green candidates")
         await _edit_intraday_status(
