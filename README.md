@@ -1,4 +1,4 @@
-# ChatGPT Scan Bot 30d — 43_full
+# ChatGPT Scan Bot 30d — 44_full
 
 Telegram bot for manual / semi-automatic trading analysis with ChatGPT.
 
@@ -150,7 +150,7 @@ No trading endpoints exist in this bot: no `place_order`, no `cancel_order`, no 
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## 43_full exact-symbol update
+## 44_full exact-symbol update
 
 - Gold exact: `XAU_USDT` = MEXC `GOLD(XAU)USDT`.
 - BTC exact: `BTC_USDT`.
@@ -160,7 +160,7 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - `XAUT_USDT` and `UKOIL_USDT` are intentionally not used as replacements because prices differ.
 
 
-## 43_full exact-symbol rule
+## 44_full exact-symbol rule
 
 Fallbacks are disabled intentionally. XAU and XAUT have different prices, and WTI and Brent have different prices.
 The bot scans only these exact trade symbols:
@@ -174,7 +174,7 @@ The bot scans only these exact trade symbols:
 If an exact symbol is unavailable, the scan should fail visibly and `/log_full` should be used for diagnostics.
 
 
-## 43_full update
+## 44_full update
 - Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
 - Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
 - Removed confusing exact-candidate remapping in archive resolution.
@@ -182,22 +182,22 @@ If an exact symbol is unavailable, the scan should fail visibly and `/log_full` 
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
 
 
-## 43_full format note
+## 44_full format note
 - Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
 - Limit orders and TP1/TP2/TP3 are written in a column.
 
-## 43_full TP compact format note
+## 44_full TP compact format note
 - Setup output now embeds management directly into take-profit lines.
 - TP format: `TP1: price — закрыть 33%, SL в б/у`, `TP2: price — закрыть 33%, SL в б/у`, `TP3: price — закрыть остаток`.
 - Separate `Сопровождение:` section is removed from `setup_format.txt`.
 
-## 43_full update
+## 44_full update
 - `setup_format.txt` now forces the final answer to be one markdown `txt` code block.
 - LIMIT orders must be one per line.
 - TP1/TP2/TP3 must be one per line.
 - Absolute bans were added against writing `Лимит: SHORT LIMIT 1 ... SHORT LIMIT 2 ...` or `Тейки: TP1 ... TP2 ... TP3 ...` on one line.
 
-## 43_full update
+## 44_full update
 - Added separate `🎯 A+ Hunter: ON/OFF` toggle.
 - A+ Hunter runs a top-200 screener loop and waits 5 minutes after the previous loop fully finishes before the next loop starts.
 - If no A+ candidate is found, no archive is created.
@@ -205,7 +205,7 @@ If an exact symbol is unavailable, the scan should fail visibly and `/log_full` 
 - A+ Hunter uses its own `task.txt`: true A+ only, MARKET + LIMIT plan, anti-chase rule. Existing standard and montage task files are unchanged.
 
 
-## 43_full update
+## 44_full update
 - A+ Hunter universe is now top-200 most liquid USDT futures plus forced symbols without duplicates.
 - Forced symbols are resolved only from real MEXC Futures ticker symbols: NVDA/NVIDIA, TSLA, USOIL, SILVER, XAU, BTC, ETH, SP500/US500/SPX, GOOGL/GOOGLE, NAS100/US100/NASDAQ.
 - Existing scan buttons and existing task texts are unchanged.
@@ -246,14 +246,14 @@ INTRADAY_DAYS_BACK=30
 ```
 
 
-## 43_full Intraday 30d no-cache update
+## 44_full Intraday 30d no-cache update
 
 - Intraday default history is now `INTRADAY_DAYS_BACK=30`.
 - If an old environment still has `INTRADAY_DAYS_BACK=7`, the bot forces a minimum of 30 days.
 - Intraday uses fresh in-memory downloads on every scan; no parquet/cache is used.
 - Intraday futures request throttle is set to `0.35s`, matching the A+ Hunter lightweight scan profile.
 
-## 43_full Intraday progress/message order update
+## 44_full Intraday progress/message order update
 
 - Intraday now uses a very short live progress message: `Intraday scan - 10%`, `20%`, `90%`, `100% No candidates`.
 - If green candidates exist, progress shows: `100% Candidates btc, eth`, then `1/3 archive`, `2/3 archive`, `3/3 archive. Ok`.
@@ -261,10 +261,10 @@ INTRADAY_DAYS_BACK=30
 - If a green archive is created, the final status is posted first and the archive file is sent below it.
 - During the 5:00 countdown, the final status message is edited every 15 seconds; the archive remains below it until the next scan starts.
 
-## 43_full Intraday robustness audit
+## 44_full Intraday robustness audit
 - Intraday is fault-tolerant per symbol: if one custom symbol fails to download/analyze, it becomes NO_TRADE/NO_DATA in the status and the remaining symbols continue.
 
-## 43_full Intraday hardening
+## 44_full Intraday hardening
 - Intraday only: stricter MANUAL_REVIEW gates; green now means only clean Intraday A candidate.
 - Added WAIT_CONFIRMATION for interesting zones without 5m/15m rejection/hold confirmation.
 - Added TRANSITION protection so direct TREND_LONG ↔ TREND_SHORT flips require confirmation across scans.
@@ -272,19 +272,19 @@ INTRADAY_DAYS_BACK=30
 - Intraday reports now include explicit day/24h/visible 1m/visible 15m levels and DATA_WARNING fields for chart/data sanity checks.
 
 
-## 43_full Stress Test update
+## 44_full Stress Test update
 - Added `🧪 Stress Test` button.
 - It builds one parquet-only archive named `multi_test-DDMM.zip`.
 - Requested data: Binance Spot `SOLUSDT` 3y, `ADAUSDT` 3y, `XRPUSDT` 3y, `XAUTUSDT` 4 months. `SILVER` is removed.
 - Collection runs with 3 async workers and 10% progress buckets.
 - Stress Test creates no `task.txt`, no `setup_format.txt`, and no `intraday_task.txt`; old modes remain unchanged.
 
-### 43_full Stress Test spot/completeness fix
+### 44_full Stress Test spot/completeness fix
 - Stress Test now uses Binance Spot `/api/v3/klines` backward chunked collection for long 1m history.
 - If any requested symbol returns less than 95% of the requested candles, the bot raises an error, writes details to `/log_full`, and does not send a misleading small archive.
 - Old scan/intraday/task files remain unchanged.
 
-### 43_full Stress Test 2 update
+### 44_full Stress Test 2 update
 - Added `🧪 Stress Test 2` button.
 - Stress Test 2 collects MEXC Futures 1m parquet for the last 30 days: `SOL_USDT`, `XRP_USDT`, `ADA_USDT`, `XAUT_USDT`, `XAU_USDT`, `SILVER_USDT`, `BTC_USDT`, `ETH_USDT`.
 - Collection uses 3 async workers and sends 10% progress buckets.
@@ -292,7 +292,7 @@ INTRADAY_DAYS_BACK=30
 - Output archive name: `multi_test2-DDMM.zip`; large archives are split into binary `.part001/.part002/...` pieces that can be reassembled.
 - No task files are created or modified by Stress Test 2.
 
-## 43_full Intraday instruction cleanup
+## 44_full Intraday instruction cleanup
 - Intraday archive instructions no longer mark every pre-entry move toward TP as an automatic missed setup.
 - LIMIT retest remains allowed if price returns to the planned entry/retest zone and closed 15m structure is still valid.
 - TP1 management updated: close 33%; move remainder to BE only after a 15m close beyond TP1 in the trade direction or after TP2.

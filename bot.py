@@ -1111,9 +1111,13 @@ def _format_intraday_price(value: float) -> str:
         return f"{v:,.2f}"
     if abs(v) >= 100:
         return f"{v:.2f}"
+
     if abs(v) >= 1:
-        return f"{v:.4f}"
-    return f"{v:.8f}"
+        text = f"{v:.4f}"
+    else:
+        text = f"{v:.8f}"
+    text = text.rstrip("0").rstrip(".")
+    return text if text not in {"", "-0"} else "0"
 
 def _intraday_status_text(reports: list[Any], created_msk: str, symbols: list[str], archive_name: str | None = None) -> str:
     green = [r for r in reports if getattr(r, "is_green", False)]

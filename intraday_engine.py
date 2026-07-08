@@ -467,6 +467,10 @@ class IntradayReport:
             return "🟢"
         if self.decision in {"NO_TRADE"}:
             return "🔴"
+        # RANGE middle is not an actionable wait zone: no edge yet, so show it red.
+        # RANGE near edge still uses WAIT_CONFIRMATION and stays yellow.
+        if self.regime in {"RANGE", "CHOP"} and self.decision == "WAIT_EDGE":
+            return "🔴"
         return "🟡"
 
     def as_dict(self) -> dict[str, Any]:
