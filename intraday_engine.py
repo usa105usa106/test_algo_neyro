@@ -162,11 +162,13 @@ def _closed_frame(df: pd.DataFrame, latest_ts: pd.Timestamp, rule: str) -> pd.Da
 
 
 def _rejection_confirmation(df_1m: pd.DataFrame, df_15m: pd.DataFrame, direction: str, vwap: float, latest_ts: pd.Timestamp | None = None) -> bool:
-    """Lightweight confirmation gate for Intraday MANUAL_REVIEW.
+    """Closed-candle confirmation gate for a pullback candidate.
 
-    It prevents passive limit ideas from being promoted to green just because price is
-    near a zone. A green candidate must show at least a small rejection/hold on
-    closed 1m/15m candles. Otherwise the decision stays WAIT_CONFIRMATION.
+    This is intentionally stricter than a simple "price touched VWAP" check.
+    The old Intraday bug promoted passive ideas to green while the market was only
+    chopping around VWAP. A valid green candidate now needs either:
+      1) a CLOSED 15m rejection/hold at VWAP, or
+      2) a completed 1m retest/rejection sequence after touching VWAP.
     """
     if df_1m.empty or df_15m.empty or not np.isfinite(vwap):
         return False
@@ -174,7 +176,7 @@ def _rejection_confirmation(df_1m: pd.DataFrame, df_15m: pd.DataFrame, direction
         df_15m = _closed_frame(df_15m, latest_ts, "15min")
     if df_15m.empty:
         return False
-    recent_1m = df_1m.tail(10)
+
     last15 = df_15m.iloc[-1]
     rng15 = float(last15["High"] - last15["Low"])
     if rng15 <= 0 or not np.isfinite(rng15):
@@ -185,15 +187,118 @@ def _rejection_confirmation(df_1m: pd.DataFrame, df_15m: pd.DataFrame, direction
     lower_wick = float(body_bottom - last15["Low"]) / rng15
     close = float(last15["Close"])
     open_ = float(last15["Open"])
+    close_loc = float((close - float(last15["Low"])) / rng15)
+
+    recent_1m = df_1m.tail(12)
+    if recent_1m.empty:
+        return False
+    recent_red = int((recent_1m.tail(5)["Close"] < recent_1m.tail(5)["Open"]).sum())
+    recent_green = int((recent_1m.tail(5)["Close"] > recent_1m.tail(5)["Open"]).sum())
+    last_close_1m = float(recent_1m["Close"].iloc[-1])
+    tol = max(1e-12, abs(vwap) * 0.00005)
 
     if direction == "short":
-        touched_zone = bool(last15["High"] >= vwap or recent_1m["High"].max() >= vwap)
-        red_or_below = close < open_ or close < vwap
-        return touched_zone and red_or_below and (upper_wick >= 0.20 or close < vwap)
+        closed_15m_rejection = (
+            float(last15["High"]) >= vwap - tol
+            and close < vwap
+            and close < open_
+            and (upper_wick >= 0.12 or close_loc <= 0.45)
+        )
+        # Do not let a few 1m red candles overrule a bullish CLOSED 15m reclaim.
+        # That was the BCH failure pattern: price swept/held low, reclaimed to VWAP
+        # on a green 15m candle, then tiny 1m weakness was promoted to Intraday A.
+        last15_opposes_short = close > open_ and close_loc >= 0.50
+        one_min_retest_rejection = (
+            not last15_opposes_short
+            and float(recent_1m["High"].max()) >= vwap - tol
+            and last_close_1m < vwap
+            and recent_red >= 3
+            and float(recent_1m.tail(3)["Close"].mean()) < vwap
+        )
+        return bool(closed_15m_rejection or one_min_retest_rejection)
 
-    touched_zone = bool(last15["Low"] <= vwap or recent_1m["Low"].min() <= vwap)
-    green_or_above = close > open_ or close > vwap
-    return touched_zone and green_or_above and (lower_wick >= 0.20 or close > vwap)
+    closed_15m_hold = (
+        float(last15["Low"]) <= vwap + tol
+        and close > vwap
+        and close > open_
+        and (lower_wick >= 0.12 or close_loc >= 0.55)
+    )
+    # Symmetric guard: a few 1m green candles cannot validate a long if the
+    # last CLOSED 15m candle is still a bearish rejection.
+    last15_opposes_long = close < open_ and close_loc <= 0.50
+    one_min_retest_hold = (
+        not last15_opposes_long
+        and float(recent_1m["Low"].min()) <= vwap + tol
+        and last_close_1m > vwap
+        and recent_green >= 3
+        and float(recent_1m.tail(3)["Close"].mean()) > vwap
+    )
+    return bool(closed_15m_hold or one_min_retest_hold)
+
+
+def _recent_liquidity_reclaim_guard(
+    symbol: str,
+    df_15m_closed: pd.DataFrame,
+    direction: str,
+    vwap: float,
+    day_high: float,
+    day_low: float,
+    high_24h: float,
+    low_24h: float,
+    atr15: float,
+) -> tuple[bool, str | None]:
+    """Block A-grade pullbacks directly after an opposite liquidity sweep.
+
+    The failure that produced bad XAU shorts was: a deep low sweep reclaimed back
+    toward/above VWAP, then the engine still called the next VWAP touch a ready
+    Trend Short. That is not a clean pullback; it is post-sweep chop until price
+    breaks the sweep low again. Symmetric logic is applied to longs after high sweeps.
+    """
+    if df_15m_closed.empty or not np.isfinite(vwap):
+        return True, None
+    recent = df_15m_closed.tail(10).copy()
+    if recent.empty:
+        return True, None
+    tol_price = float(recent["Close"].iloc[-1])
+    tol = max(_data_tolerance(symbol, tol_price), float(atr15 or 0.0) * 0.05)
+
+    def _loc(row: pd.Series) -> float:
+        rng = float(row["High"] - row["Low"])
+        if not np.isfinite(rng) or rng <= 0:
+            return 0.5
+        return float((row["Close"] - row["Low"]) / rng)
+
+    def _lower_wick(row: pd.Series) -> float:
+        rng = float(row["High"] - row["Low"])
+        if not np.isfinite(rng) or rng <= 0:
+            return 0.0
+        return float((min(row["Open"], row["Close"]) - row["Low"]) / rng)
+
+    def _upper_wick(row: pd.Series) -> float:
+        rng = float(row["High"] - row["Low"])
+        if not np.isfinite(rng) or rng <= 0:
+            return 0.0
+        return float((row["High"] - max(row["Open"], row["Close"])) / rng)
+
+    if direction == "short":
+        for _, row in recent.iterrows():
+            made_edge_low = float(row["Low"]) <= min(day_low, low_24h) + tol
+            reclaimed = float(row["Close"]) >= vwap - tol or _loc(row) >= 0.65
+            if made_edge_low and _lower_wick(row) >= 0.45 and reclaimed:
+                return False, (
+                    f"recent low sweep/reclaim {_fmt(float(row['Low']))}->{_fmt(float(row['Close']))}; "
+                    "short только после закрытого breakdown ниже sweep low и ретеста, не от VWAP в чопе"
+                )
+    else:
+        for _, row in recent.iterrows():
+            made_edge_high = float(row["High"]) >= max(day_high, high_24h) - tol
+            rejected = float(row["Close"]) <= vwap + tol or _loc(row) <= 0.35
+            if made_edge_high and _upper_wick(row) >= 0.45 and rejected:
+                return False, (
+                    f"recent high sweep/reject {_fmt(float(row['High']))}->{_fmt(float(row['Close']))}; "
+                    "long только после закрытого breakout выше sweep high и ретеста, не от VWAP в чопе"
+                )
+    return True, None
 
 
 def _symbol_base(symbol: str) -> str:
@@ -227,6 +332,11 @@ def _day_edge_room_ok(symbol: str, direction: str, entry_ref: float, day_high: f
         min_rr_to_edge = 0.25
     elif base in {"XAU", "XAUT", "GOLD", "SILVER"}:
         min_rr_to_edge = 0.35
+    elif base in {"USOIL", "OIL"}:
+        # Oil often gives clean-looking VWAP holds right under the daily/24h high.
+        # Do not promote those to Intraday A unless there is enough room to the
+        # nearest day edge versus the structural risk back through the session range.
+        min_rr_to_edge = 0.55
     else:
         min_rr_to_edge = 0.30
     buffer = max(_data_tolerance(symbol, entry_ref), float(atr15 or 0.0) * 0.10)
@@ -553,10 +663,12 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     short_htf_ok, short_htf_reason = _htf_trend_ok(symbol, "short", df_4h)
     long_room_ok, long_room_reason = _day_edge_room_ok(symbol, "long", price, day_high, day_low, atr15)
     short_room_ok, short_room_reason = _day_edge_room_ok(symbol, "short", price, day_high, day_low, atr15)
+    long_reclaim_ok, long_reclaim_reason = _recent_liquidity_reclaim_guard(symbol, df_15m_closed, "long", vwap, day_high, day_low, high_24h, low_24h, atr15)
+    short_reclaim_ok, short_reclaim_reason = _recent_liquidity_reclaim_guard(symbol, df_15m_closed, "short", vwap, day_high, day_low, high_24h, low_24h, atr15)
     pullback_watch_long = regime == "TREND_LONG" and near_vwap and long_score >= 70 and long_pressure_edge >= 8 and trap_risk <= 45 and late_risk <= 45
     pullback_watch_short = regime == "TREND_SHORT" and near_vwap and short_score >= 70 and short_pressure_edge >= 8 and trap_risk <= 45 and late_risk <= 45
-    pullback_ok_long = pullback_watch_long and long_score >= 75 and long_score >= short_score + 25 and long_pressure_edge >= long_edge_min and strict_trap_ok and strict_late_ok and long_confirmed and long_room_ok and long_htf_ok and not data_warning
-    pullback_ok_short = pullback_watch_short and short_score >= 75 and short_score >= long_score + 25 and short_pressure_edge >= short_edge_min and strict_trap_ok and strict_late_ok and short_confirmed and short_room_ok and short_htf_ok and not data_warning
+    pullback_ok_long = pullback_watch_long and long_score >= 75 and long_score >= short_score + 25 and long_pressure_edge >= long_edge_min and strict_trap_ok and strict_late_ok and long_confirmed and long_room_ok and long_htf_ok and long_reclaim_ok and not data_warning
+    pullback_ok_short = pullback_watch_short and short_score >= 75 and short_score >= long_score + 25 and short_pressure_edge >= short_edge_min and strict_trap_ok and strict_late_ok and short_confirmed and short_room_ok and short_htf_ok and short_reclaim_ok and not data_warning
 
     if regime == "TREND_LONG":
         allowed = "LONG_ONLY"
@@ -573,6 +685,8 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
                 comment = f"Лонг-сценарий есть, но RR/room слабый: {long_room_reason}. Ждать пробой/ретест, не входить из середины."
             elif not long_htf_ok:
                 comment = f"Лонг-сценарий есть, но старший 4H фильтр против: {long_htf_reason}. Ордер заранее не ставить."
+            elif not long_reclaim_ok:
+                comment = f"Лонг-сценарий есть, но после sweep/reclaim фильтр против: {long_reclaim_reason}. Ордер заранее не ставить."
             else:
                 comment = "Лонг-сценарий есть, но подтверждения недостаточно. Ордер заранее не ставить: ждать 5m/15m rejection/hold."
         else:
@@ -593,6 +707,8 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
                 comment = f"Шорт-сценарий есть, но RR/room слабый: {short_room_reason}. Ждать пробой/ретест, не входить из середины."
             elif not short_htf_ok:
                 comment = f"Шорт-сценарий есть, но старший 4H фильтр против: {short_htf_reason}. Ордер заранее не ставить."
+            elif not short_reclaim_ok:
+                comment = f"Шорт-сценарий есть, но после sweep/reclaim фильтр против: {short_reclaim_reason}. Ордер заранее не ставить."
             else:
                 comment = "Шорт-сценарий есть, но подтверждения недостаточно. Ордер заранее не ставить: ждать 5m/15m rejection/hold."
         else:
