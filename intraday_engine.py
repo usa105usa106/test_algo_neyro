@@ -35,7 +35,12 @@ def _safe_pct(a: float, b: float) -> float:
 
 
 def _norm_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize downloaded MEXC dataframe to OHLCV with UTC datetime index."""
+    """Normalize downloaded/exported dataframe to OHLCV with UTC datetime index.
+
+    Live MEXC downloads use lower-case columns, while Intraday archive CSVs are
+    exported with TitleCase OHLCV columns. Accept both so audit/replay of the
+    bot's own Intraday archives cannot crash on column casing.
+    """
     if df.empty:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume", "QuoteVolume"])
     out = df.copy()
@@ -46,8 +51,18 @@ def _norm_df(df: pd.DataFrame) -> pd.DataFrame:
     else:
         idx = pd.to_datetime(out.index, utc=True)
     out.index = idx
-    out = out[["open", "high", "low", "close", "volume", "quote_volume"]].sort_index()
-    out.columns = ["Open", "High", "Low", "Close", "Volume", "QuoteVolume"]
+
+    lower_cols = ["open", "high", "low", "close", "volume", "quote_volume"]
+    title_cols = ["Open", "High", "Low", "Close", "Volume", "QuoteVolume"]
+    if all(c in out.columns for c in lower_cols):
+        out = out[lower_cols].sort_index()
+        out.columns = title_cols
+    elif all(c in out.columns for c in title_cols[:5]):
+        if "QuoteVolume" not in out.columns:
+            out["QuoteVolume"] = np.nan
+        out = out[title_cols].sort_index()
+    else:
+        raise ValueError(f"Unsupported OHLCV columns for intraday dataframe: {list(out.columns)}")
     return out.dropna(subset=["Open", "High", "Low", "Close"])
 
 

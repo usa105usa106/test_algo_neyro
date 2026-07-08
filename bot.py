@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -1097,6 +1098,23 @@ def _apply_intraday_hysteresis(runtime: BotRuntime, report: IntradayReport) -> I
     runtime.intraday_regime_state[symbol] = {"stable": raw_regime, "pending": None, "count": 0}
     return report
 
+
+
+def _format_intraday_price(value: float) -> str:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if not math.isfinite(v):
+        return "n/a"
+    if abs(v) >= 1000:
+        return f"{v:,.2f}"
+    if abs(v) >= 100:
+        return f"{v:.2f}"
+    if abs(v) >= 1:
+        return f"{v:.4f}"
+    return f"{v:.8f}"
+
 def _intraday_status_text(reports: list[Any], created_msk: str, symbols: list[str], archive_name: str | None = None) -> str:
     green = [r for r in reports if getattr(r, "is_green", False)]
     yellow = [r for r in reports if getattr(r, "color_emoji", "") == "🟡"]
@@ -1110,6 +1128,7 @@ def _intraday_status_text(reports: list[Any], created_msk: str, symbols: list[st
     for r in reports:
         lines.append(r.short_line())
         rank = f" | rank {r.quality_score}" if getattr(r, "is_green", False) else ""
+        lines.append(f"  Цена скана: {_format_intraday_price(getattr(r, 'price', float('nan')))}")
         lines.append(f"  Давление: B{r.buyer_pressure}/S{r.seller_pressure} | trap {r.trap_risk} | late {r.late_risk} | {r.playbook}{rank}")
         lines.append(f"  {r.comment}")
         lines.append("")

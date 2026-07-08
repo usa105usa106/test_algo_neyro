@@ -43,7 +43,7 @@ Decision rules:
 - If rank_score/quality_score is below 68, default to WAIT. For 68-69, be extra strict and allow Intraday A only with an obvious closed sweep/reclaim/hold and clean RR.
 - Reject if report/montage/CSV materially disagree or DATA_WARNING exists.
 - Reject if trend just flipped, is transitional, or 4H structure is strongly opposite to the intended direction.
-- Do not chase after impulse. If target/low/high was reached before entry, setup is missed.
+- Do not chase after impulse. If price already moved toward TP before entry, do not chase. But if price returns to the planned retest/entry zone and closed 15m structure is still valid, LIMIT retest is allowed.
 
 Stop and RR rules:
 - Do not give micro-invalidation unless the intraday_task explicitly says micro scalp. This task is not micro scalp.
@@ -53,6 +53,7 @@ Stop and RR rules:
 - If the nearest day high/low is too close to entry compared with structural risk, do not force the trade; answer WAIT / observation only and wait for breakout+retest.
 - If structural SL makes RR bad, do not force the trade; answer WAIT / observation only.
 - TP must be calculated from the real SL risk. Wide SL requires wider TP. Micro-TPs with a wide SL are forbidden.
+- TP1 closes 33%. Do not force instant BE after TP1. Move remainder to BE only after 15m close beyond TP1 in trade direction or after TP2; before that, keep structural SL unless structure breaks.
 - Before final answer, check: is SL beyond structure? do TPs match real risk? If not, answer WAIT / observation only.
 
 Compact template:
@@ -60,8 +61,8 @@ Compact template:
 Setup <symbol>: LONG LIMIT / SHORT LIMIT / WAIT_CONFIRMATION
 Entry: **...**
 Stop: **...**
-TP1: **...** — 33% + BE
-TP2: **...** — 33% + BE
+TP1: **...** — закрыть 33%; BE только после 15m close за TP1 или после TP2
+TP2: **...** — закрыть 33%; остаток в BE
 TP3: **...** — остаток
 Cancel: ...
 Why: 1-3 short sentences.
@@ -169,7 +170,7 @@ def build_intraday_candidates_archive(
         "chart_files": chart_files,
         "candle_files": candle_files,
         "instruction_files": ["intraday_task.txt", "status.txt", "reports/*/report.json"],
-        "answer_rule_for_chatgpt": "Use only this archive data. Brief Russian answer. report.decision=MANUAL_REVIEW is only a candidate for human check, not permission. Maximum one real setup per archive, Intraday A only; B/B+/A- => WAIT observation only. LIMIT only. Bold Entry/Stop/TP numbers. Use midpoint for ranges. Require CLOSED 1m/15m rejection/hold or sweep reclaim; unfinished candles are context only; reject strong opposite 4H structure. If rank_score/quality_score < 68, default WAIT; 68-69 requires extra strict closed confirmation + clean RR. SL must be structural beyond actual setup invalidation / nearest liquidity magnet; do not automatically force far 24h high/low. If nearest day edge is too close or structural SL ruins RR, answer WAIT.",
+        "answer_rule_for_chatgpt": "Use only this archive data. Brief Russian answer. report.decision=MANUAL_REVIEW is only a candidate for human check, not permission. Maximum one real setup per archive, Intraday A only; B/B+/A- => WAIT observation only. LIMIT only. Bold Entry/Stop/TP numbers. Use midpoint for ranges. Require CLOSED 1m/15m rejection/hold or sweep reclaim; unfinished candles are context only; reject strong opposite 4H structure. If price moved toward TP before entry, do not chase, but a return to the planned retest/entry zone is allowed if closed 15m structure remains valid. If rank_score/quality_score < 68, default WAIT; 68-69 requires extra strict closed confirmation + clean RR. SL must be structural beyond actual setup invalidation / nearest liquidity magnet; do not automatically force far 24h high/low. If nearest day edge is too close or structural SL ruins RR, answer WAIT. TP1 closes 33%; move remainder to BE only after 15m close beyond TP1 in trade direction or after TP2.",
         "storage_policy": "One zip per scan with all green MANUAL_REVIEW candidates only. Fresh 30d download in memory; no parquet/cache is used by Intraday.",
     }
     write_json(build_dir / "manifest.json", manifest)
