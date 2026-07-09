@@ -1132,9 +1132,9 @@ def _intraday_status_text(reports: list[Any], created_msk: str, symbols: list[st
     for r in reports:
         lines.append(r.short_line())
         rank = f" | rank {r.quality_score}" if getattr(r, "is_green", False) else ""
-        lines.append(f"  Цена скана: {_format_intraday_price(getattr(r, 'price', float('nan')))}")
-        lines.append(f"  Давление: B{r.buyer_pressure}/S{r.seller_pressure} | trap {r.trap_risk} | late {r.late_risk} | {r.playbook}{rank}")
-        lines.append(f"  {r.comment}")
+        lines.append(f"Цена скана: {_format_intraday_price(getattr(r, 'price', float('nan')))}")
+        lines.append(f"Давление: B{r.buyer_pressure}/S{r.seller_pressure} | trap {r.trap_risk} | late {r.late_risk} | {r.playbook}{rank}")
+        lines.append(f"{r.comment}")
         lines.append("")
     lines.append("━━━━━━━━━━━━━━")
     lines.append(f"🟢 candidates: {len(green)} | 🟡 wait: {len(yellow)} | 🔴 no trade: {len(red)}")

@@ -1,4 +1,4 @@
-# Coolify deploy — ChatGPT Scan Bot 30d 44_full
+# Coolify deploy — ChatGPT Scan Bot 30d 46_full
 
 ## Required env
 
@@ -19,7 +19,7 @@ SECRET_ENCRYPTION_KEY=
 2. Open Telegram.
 3. Send `/start`.
 4. The latest message will contain the current button panel at the bottom of the chat.
-5. Press `/ping`; expected version: `44_full`.
+5. Press `/ping`; expected version: `46_full`.
 6. Press a scan button, for example `📊 Gold 30d`, or send a text symbol like `xrp` for a custom exact-symbol archive.
 
 ## Output
@@ -52,7 +52,7 @@ If MEXC rate-limits or returns “too frequent”, the bot increases pause and r
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## 44_full update
+## 46_full update
 - Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
 - Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
 - Removed confusing exact-candidate remapping in archive resolution.
@@ -60,35 +60,35 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
 
 
-## 44_full update
-- Version is now `44_full`.
+## 46_full update
+- Version is now `46_full`.
 - Generated setup headers are `Setup Gold / XAU:`, `Setup Silver / XAG:`, and `Setup Oil / WTI:`.
 - Setup templates do not include a separate `Актив:` line.
 
 
-## 44_full format note
+## 46_full format note
 - Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
 - Limit orders and TP1/TP2/TP3 are written in a column.
 
-## 44_full TP compact format note
+## 46_full TP compact format note
 - Setup output embeds TP management directly into TP1/TP2/TP3 lines.
 - Separate `Сопровождение:` section is removed.
 
-## 44_full update
+## 46_full update
 - Setup output format is now strict vertical format inside one markdown `txt` code block.
 - This prevents ChatGPT from merging LIMIT and TP lines into one paragraph.
 
-## 44_full update
+## 46_full update
 - Added separate `🎯 A+ Hunter: ON/OFF` toggle.
 - The hunter loop is sequential: scan/build/send must finish, then the 05:00 timer starts.
 - Existing scan buttons and their task files are unchanged.
 
 
-## 44_full update
+## 46_full update
 - A+ Hunter universe now adds forced symbols to top-200 without duplicates.
 - Existing scan buttons and existing task texts are unchanged.
 
-## 44_full Intraday update
+## 46_full Intraday update
 - Added visible Intraday 05:00 countdown updated every 15 seconds, after the previous scan/archive fully finishes.
 - Intraday status is deleted and re-sent at the bottom every scan.
 - Green candidate archives are sent as one zip per scan: `intraday_btc-HHMM_DDMM.zip` for one symbol, `intraday_multi-HHMM_DDMM.zip` for multiple symbols.
@@ -97,14 +97,14 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - All Intraday scan details are written to `/log_full`.
 
 
-## 44_full Intraday 30d no-cache update
+## 46_full Intraday 30d no-cache update
 
 - Intraday default history is `INTRADAY_DAYS_BACK=30`.
 - If an old environment still has `INTRADAY_DAYS_BACK=7`, the bot forces a minimum of 30 days.
 - Intraday does not use parquet/cache; every scan downloads fresh candles in memory.
 - Intraday uses A+ Hunter-style public futures throttle: serialized requests with `0.35s` pause.
 
-## 44_full Intraday progress/message order update
+## 46_full Intraday progress/message order update
 
 - Intraday status now displays simple progress only: `10%`, `20%`, `90%`, `100% No candidates` or `100% Candidates ...`.
 - If there are candidates, archive progress is shown as `1/3 archive`, `2/3 archive`, `3/3 archive. Ok`.
@@ -112,33 +112,38 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Final status is posted before the archive; the archive file is sent below the status.
 - Countdown still updates every 15 seconds on the final status.
 
-## 44_full Intraday robustness audit
+## 46_full Intraday robustness audit
 - Intraday is fault-tolerant per symbol: if one custom symbol fails to download/analyze, it becomes NO_TRADE/NO_DATA in the status and the remaining symbols continue.
 
-## 44_full Intraday hardening
+## 46_full Intraday hardening
 - Intraday only: stricter MANUAL_REVIEW, WAIT_CONFIRMATION, TRANSITION regime protection, chart/data sanity fields.
 - Old scan/Montage/A+ Hunter task files are unchanged.
 
 
-## 44_full Stress Test update
-- Version is now `44_full`.
+## 46_full Stress Test update
+- Version is now `46_full`.
 - Added `🧪 Stress Test` button for one parquet-only `multi_test-DDMM.zip` archive.
 - Stress Test collects Binance Spot `SOLUSDT`/`ADAUSDT`/`XRPUSDT` 3y and `XAUTUSDT` 4 months with 3 async workers and progress buckets. `SILVER` is removed from Stress Test.
 - It does not create or modify task files and does not change old scan/montage/A+ Hunter/Intraday modes.
 
-### 44_full Stress Test spot/completeness fix
+### 46_full Stress Test spot/completeness fix
 - Stress Test now uses Binance Spot `/api/v3/klines` backward chunked collection for long 1m history.
 - If any requested symbol returns less than 95% of the requested candles, the bot raises an error, writes details to `/log_full`, and does not send a misleading small archive.
 - Old scan/intraday/task files remain unchanged.
 
-### 44_full Stress Test 2 update
+### 46_full Stress Test 2 update
 - Added `🧪 Stress Test 2` button.
 - Stress Test 2 collects MEXC Futures 1m parquet for 30d: SOL/XRP/ADA/XAUT/XAU/SILVER/BTC/ETH.
 - Missing or incomplete symbols are skipped; successful parquet files are still zipped and sent.
 - Large `multi_test2-DDMM.zip` files are split into binary `.partNNN` pieces, same reassembly principle as the existing bot.
 
-## 44_full Intraday instruction cleanup
-- Version is now `44_full`.
+## 46_full Intraday instruction cleanup
+- Version is now `46_full`.
 - Intraday archive instructions: no instant “missed setup” if price returns to a valid retest zone with closed 15m structure intact.
 - TP1 management: close 33%; move remainder to BE only after 15m close beyond TP1 in direction or after TP2.
 - Intraday OHLCV normalization accepts both live lower-case data and exported archive CSV TitleCase data.
+
+## 46_full Intraday task-only fix
+- Version is now `46_full`.
+- Only Intraday archive task/instructions were adjusted: avoid unnecessary extra confirmation for already-confirmed green MANUAL_REVIEW candidates and treat 24h high/low as possible target/liquidity when RR is enough.
+
