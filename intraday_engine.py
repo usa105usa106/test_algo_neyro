@@ -7,7 +7,24 @@ import numpy as np
 import pandas as pd
 
 
-MIN_INTRADAY_GREEN_QUALITY = 68
+# 55_full: direction-agnostic Intraday logic with setup-aware duplicate handling. Every supported asset may produce
+# LONG or SHORT from current candle structure; no permanent asset/direction
+# blacklist is allowed. Structural stops and strict Sweep/Range gates remain.
+MIN_INTRADAY_GREEN_QUALITY = 58
+MIN_REVERSAL_GREEN_QUALITY = 68
+MIN_INTRADAY_PRESSURE_EDGE = 10
+MIN_REVERSAL_PRESSURE_EDGE = 20
+MAX_INTRADAY_TRAP_RISK = 32
+MAX_INTRADAY_LATE_RISK = 35
+MAX_REVERSAL_TRAP_RISK = 24
+MAX_REVERSAL_LATE_RISK = 20
+MIN_TREND_EFFICIENCY_15M = 0.05
+MIN_DIRECTIONAL_MOVE_ATR_15M = -0.80
+MAX_DIRECTION_SCORE_GAP = 90
+MIN_LOCAL_ROOM_R = 0.10
+MEXC_CONSERVATIVE_ENTRY_EXIT_RATE = 0.0014
+MAX_ESTIMATED_FEE_DRAG_R = 1.10
+MAX_REVERSAL_FEE_DRAG_R = 0.60
 
 
 def _fmt(value: float, digits: int = 2) -> str:
@@ -295,19 +312,28 @@ def _recent_liquidity_reclaim_guard(
             return 0.0
         return float((row["High"] - max(row["Open"], row["Close"])) / rng)
 
-    if direction == "short":
-        for _, row in recent.iterrows():
-            made_edge_low = float(row["Low"]) <= min(day_low, low_24h) + tol
-            reclaimed = float(row["Close"]) >= vwap - tol or _loc(row) >= 0.65
+    # Evaluate each recent candle against information that existed BEFORE it.
+    # Using the final day/24h low/high here would make earlier sweeps disappear
+    # after a later extreme and would introduce look-ahead into this guard.
+    for ts, row in recent.iterrows():
+        prior = df_15m_closed[df_15m_closed.index < ts].tail(96)
+        if len(prior) < 8:
+            continue
+        row_price = float(row["Close"])
+        penetration = _sweep_penetration_tolerance(symbol, row_price, atr15)
+        if direction == "short":
+            prior_low = float(prior["Low"].min())
+            made_edge_low = float(row["Low"]) < prior_low - penetration
+            reclaimed = float(row["Close"]) >= prior_low - tol or _loc(row) >= 0.65
             if made_edge_low and _lower_wick(row) >= 0.45 and reclaimed:
                 return False, (
                     f"recent low sweep/reclaim {_fmt(float(row['Low']))}->{_fmt(float(row['Close']))}; "
                     "short только после закрытого breakdown ниже sweep low и ретеста, не от VWAP в чопе"
                 )
-    else:
-        for _, row in recent.iterrows():
-            made_edge_high = float(row["High"]) >= max(day_high, high_24h) - tol
-            rejected = float(row["Close"]) <= vwap + tol or _loc(row) <= 0.35
+        else:
+            prior_high = float(prior["High"].max())
+            made_edge_high = float(row["High"]) > prior_high + penetration
+            rejected = float(row["Close"]) <= prior_high + tol or _loc(row) <= 0.35
             if made_edge_high and _upper_wick(row) >= 0.45 and rejected:
                 return False, (
                     f"recent high sweep/reject {_fmt(float(row['High']))}->{_fmt(float(row['Close']))}; "
@@ -321,16 +347,9 @@ def _symbol_base(symbol: str) -> str:
 
 
 def _trend_pullback_min_edge(symbol: str) -> int:
-    base = _symbol_base(symbol)
-    if base in {"BTC", "ETH", "SOL"}:
-        return 10
-    if base in {"XAU", "XAUT", "GOLD", "SILVER"}:
-        return 14
-    if base in {"USOIL", "OIL"}:
-        return 12
-    if base in {"XRP", "ADA", "BCH", "POL", "MATIC", "DOT", "LINK", "AVAX", "BNB", "LTC", "DOGE"}:
-        return 12
-    return 13
+    # Symmetric floor for both LONG and SHORT. Direction is decided only from
+    # current market structure, pressure and closed-candle confirmation.
+    return 10
 
 
 def _day_edge_room_ok(symbol: str, direction: str, entry_ref: float, day_high: float, day_low: float, atr15: float) -> tuple[bool, str | None]:
@@ -417,6 +436,206 @@ def _sweep_penetration_tolerance(symbol: str, price: float, atr15: float) -> flo
     return max(1e-8, base_tick, atr_part)
 
 
+def _trend_efficiency(df: pd.DataFrame, direction: str, atr_value: float, bars: int = 8) -> tuple[float, float]:
+    """Return path efficiency and signed move in ATR units on CLOSED candles.
+
+    The old engine could label a sideways VWAP chop as TREND because several
+    correlated score components all pointed in the same direction. Efficiency
+    blocks those flat/zig-zag episodes without demanding a fresh impulse.
+    """
+    recent = df.tail(bars)
+    if len(recent) < bars or atr_value <= 0:
+        return 0.0, 0.0
+    closes = recent["Close"].to_numpy(dtype=float)
+    path = float(np.abs(np.diff(closes)).sum())
+    net = float(closes[-1] - closes[0])
+    efficiency = abs(net) / path if path > 0 else 0.0
+    signed_move_atr = net / atr_value if direction == "long" else -net / atr_value
+    return float(_clamp(efficiency, 0.0, 1.0)), float(signed_move_atr)
+
+
+def _range_context(df_15m_closed: pd.DataFrame, atr15: float) -> dict[str, float | int | bool]:
+    recent = df_15m_closed.tail(32)
+    result: dict[str, float | int | bool] = {
+        "valid": False, "choppy": True, "low": float("nan"), "high": float("nan"),
+        "mid": float("nan"), "edge_band": float("nan"), "width_atr": 0.0,
+        "efficiency": 1.0, "touch_low": 0, "touch_high": 0,
+    }
+    if len(recent) < 16 or atr15 <= 0:
+        return result
+    low = float(recent["Low"].min())
+    high = float(recent["High"].max())
+    width = high - low
+    if not np.isfinite(width) or width <= 0:
+        return result
+    closes = recent["Close"].to_numpy(dtype=float)
+    path = float(np.abs(np.diff(closes)).sum())
+    efficiency = abs(float(closes[-1] - closes[0])) / path if path > 0 else 0.0
+    width_atr = width / atr15
+    edge_band = max(atr15 * 0.35, width * 0.08)
+    low_mask = recent["Low"] <= low + edge_band
+    high_mask = recent["High"] >= high - edge_band
+    # Count distinct reactions, not consecutive candles parked at one edge.
+    touch_low = int((low_mask & ~low_mask.shift(1, fill_value=False)).sum())
+    touch_high = int((high_mask & ~high_mask.shift(1, fill_value=False)).sum())
+    edge_bars = int(low_mask.sum() + high_mask.sum())
+    valid = 2.4 <= width_atr <= 10.0 and efficiency <= 0.38 and touch_low >= 2 and touch_high >= 2
+    choppy = width_atr < 2.4 or (efficiency <= 0.18 and edge_bars >= 8)
+    result.update(valid=bool(valid), choppy=bool(choppy), low=low, high=high, mid=(low + high) / 2.0,
+                  edge_band=edge_band, width_atr=float(width_atr), efficiency=float(efficiency),
+                  touch_low=touch_low, touch_high=touch_high)
+    return result
+
+
+def _nearest_structure_level(
+    df_15m_closed: pd.DataFrame, direction: str, entry: float, atr15: float, target_hint: float | None = None
+) -> float:
+    recent = df_15m_closed.tail(32)
+    min_gap = max(atr15 * 0.25, abs(entry) * 1e-6)
+    levels: list[float] = []
+    if len(recent) >= 3:
+        highs = recent["High"].to_numpy(dtype=float)
+        lows = recent["Low"].to_numpy(dtype=float)
+        for i in range(1, len(recent) - 1):
+            if direction == "long" and highs[i] >= highs[i - 1] and highs[i] >= highs[i + 1] and highs[i] > entry + min_gap:
+                levels.append(float(highs[i]))
+            elif direction == "short" and lows[i] <= lows[i - 1] and lows[i] <= lows[i + 1] and lows[i] < entry - min_gap:
+                levels.append(float(lows[i]))
+    if target_hint is not None and np.isfinite(target_hint):
+        if direction == "long" and target_hint > entry + min_gap:
+            levels.append(float(target_hint))
+        elif direction == "short" and target_hint < entry - min_gap:
+            levels.append(float(target_hint))
+    if levels:
+        return min(levels) if direction == "long" else max(levels)
+    if recent.empty:
+        return float("nan")
+    return float(recent["High"].max() if direction == "long" else recent["Low"].min())
+
+
+def _stop_noise_floor_atr(symbol: str, playbook: str = "Trend Pullback") -> float:
+    base = _symbol_base(symbol)
+    is_metal_or_energy = base in {"XAU", "XAUT", "GOLD", "SILVER", "USOIL", "OIL"}
+    if playbook == "Trend Pullback":
+        # Exact replay showed that the old 1.70/1.80 ATR floor repeatedly sat
+        # inside normal intraday noise. Use a wider floor only for the optimized
+        # Trend Pullback branch.
+        return 2.40 if is_metal_or_energy else 2.30
+    return 1.80 if is_metal_or_energy else 1.70
+
+
+def _max_structural_risk_atr(symbol: str, playbook: str = "Trend Pullback") -> float:
+    if playbook == "Trend Pullback":
+        return 4.00
+    return 2.80 if _symbol_base(symbol) in {"USOIL", "OIL"} else 3.00
+
+
+def _trend_min_local_room_r(symbol: str) -> float:
+    # A 0.10R nearest-structure floor preserves intraday frequency. Entry is
+    # shifted deeper and the stop stays structural, so this is not a micro-stop.
+    return MIN_LOCAL_ROOM_R
+
+
+
+def _round_price_to_tick(value: float, tick: float | None, mode: str = "nearest") -> float:
+    """Round a plan price to the exchange tick without tightening the stop.
+
+    mode=down/up is used for protective stops and conservative targets.
+    Unknown or invalid ticks leave the raw research value unchanged.
+    """
+    if tick is None or not np.isfinite(tick) or tick <= 0 or not np.isfinite(value):
+        return float(value)
+    units = float(value) / float(tick)
+    if mode == "down":
+        rounded = np.floor(units + 1e-12)
+    elif mode == "up":
+        rounded = np.ceil(units - 1e-12)
+    else:
+        rounded = np.round(units)
+    return float(rounded * float(tick))
+
+
+def _suggested_structural_plan(
+    symbol: str,
+    direction: str,
+    entry_ref: float,
+    df_15m_closed: pd.DataFrame,
+    atr15: float,
+    playbook: str = "Trend Pullback",
+    invalidation_level: float | None = None,
+    target_hint: float | None = None,
+    price_tick: float | None = None,
+) -> dict[str, float | str | None]:
+    """Create a deterministic playbook-aware audit plan from CLOSED 15m data."""
+    empty = {
+        "entry": float("nan"), "stop": float("nan"), "tp1": float("nan"),
+        "tp2": float("nan"), "tp3": float("nan"), "risk_atr": float("nan"),
+        "local_room_r": float("nan"), "warning": "insufficient closed 15m data",
+    }
+    if not np.isfinite(entry_ref) or atr15 <= 0 or len(df_15m_closed) < 8 or direction not in {"long", "short"}:
+        return empty
+
+    if playbook == "Trend Pullback":
+        # Five hours of CLOSED 15m structure (20 candles). The deeper limit improves entry;
+        # frequency is never created by tightening the stop.
+        lookback = 20
+    elif playbook == "Range Edge":
+        lookback = 12
+    else:
+        lookback = 8
+    recent = df_15m_closed.tail(lookback)
+    buffer_mult = 0.25 if playbook == "Sweep Reversal" else 0.20
+    buffer = max(_data_tolerance(symbol, entry_ref) * 0.50, atr15 * buffer_mult)
+    min_risk = atr15 * _stop_noise_floor_atr(symbol, playbook)
+    max_risk = atr15 * _max_structural_risk_atr(symbol, playbook)
+
+    if playbook == "Trend Pullback":
+        entry_ref = entry_ref - 0.15 * atr15 if direction == "long" else entry_ref + 0.15 * atr15
+        target_scale = 0.80
+    else:
+        target_scale = 1.00
+    entry = _round_price_to_tick(entry_ref, price_tick, "nearest")
+    if direction == "long":
+        swing = float(recent["Low"].min())
+        if invalidation_level is not None and np.isfinite(invalidation_level):
+            swing = min(swing, float(invalidation_level))
+        raw_stop = min(swing - buffer, entry - min_risk)
+        stop = _round_price_to_tick(raw_stop, price_tick, "down")
+        risk = entry - stop
+        obstacle = _nearest_structure_level(df_15m_closed, direction, entry, atr15, target_hint)
+        room = obstacle - entry if np.isfinite(obstacle) else float("nan")
+        tp1 = _round_price_to_tick(entry + target_scale * risk, price_tick, "down")
+        tp2 = _round_price_to_tick(entry + 2 * target_scale * risk, price_tick, "down")
+        tp3 = _round_price_to_tick(entry + 3 * target_scale * risk, price_tick, "down")
+    else:
+        swing = float(recent["High"].max())
+        if invalidation_level is not None and np.isfinite(invalidation_level):
+            swing = max(swing, float(invalidation_level))
+        raw_stop = max(swing + buffer, entry + min_risk)
+        stop = _round_price_to_tick(raw_stop, price_tick, "up")
+        risk = stop - entry
+        obstacle = _nearest_structure_level(df_15m_closed, direction, entry, atr15, target_hint)
+        room = entry - obstacle if np.isfinite(obstacle) else float("nan")
+        tp1 = _round_price_to_tick(entry - target_scale * risk, price_tick, "up")
+        tp2 = _round_price_to_tick(entry - 2 * target_scale * risk, price_tick, "up")
+        tp3 = _round_price_to_tick(entry - 3 * target_scale * risk, price_tick, "up")
+
+    risk_atr = risk / atr15 if atr15 > 0 else float("nan")
+    local_room_r = room / risk if risk > 0 and np.isfinite(room) else float("nan")
+    warning = None
+    if risk > max_risk:
+        warning = f"structural stop {risk_atr:.2f} ATR is too wide for intraday"
+    elif np.isfinite(local_room_r):
+        room_floor = _trend_min_local_room_r(symbol) if playbook == "Trend Pullback" else 1.00
+        if local_room_r < room_floor:
+            warning = f"nearest closed-15m room is only {local_room_r:.2f}R (< {room_floor:.2f}R)"
+
+    return {
+        "entry": float(entry), "stop": float(stop), "tp1": float(tp1), "tp2": float(tp2), "tp3": float(tp3),
+        "risk_atr": float(risk_atr), "local_room_r": float(local_room_r), "warning": warning,
+    }
+
+
 @dataclass(frozen=True)
 class IntradayReport:
     symbol: str
@@ -456,6 +675,22 @@ class IntradayReport:
     data_warning_reason: str | None = None
     session_age_min: int = 0
     low_liquidity_session: bool = False
+    pressure_edge: int = 0
+    direction_score_gap: int = 0
+    atr15: float = float("nan")
+    trend_efficiency_15m: float = float("nan")
+    directional_move_atr_15m: float = float("nan")
+    suggested_entry: float = float("nan")
+    suggested_structural_stop: float = float("nan")
+    suggested_tp1: float = float("nan")
+    suggested_tp2: float = float("nan")
+    suggested_tp3: float = float("nan")
+    suggested_risk_atr: float = float("nan")
+    suggested_local_room_r: float = float("nan")
+    estimated_fee_drag_r: float = float("nan")
+    plan_warning: str | None = None
+    price_tick: float = float("nan")
+    suggested_stop_pct: float = float("nan")
 
     @property
     def is_green(self) -> bool:
@@ -487,6 +722,9 @@ class IntradayReport:
             f"Разрешено: {self.allowed_direction}\n"
             f"Давление: buyers {self.buyer_pressure} / sellers {self.seller_pressure}\n"
             f"Риск: trap {self.trap_risk} / late {self.late_risk}\n"
+            f"Edge/efficiency: pressure +{self.pressure_edge} / 15m eff {self.trend_efficiency_15m:.2f} / move {self.directional_move_atr_15m:.2f} ATR\n"
+            f"Plan audit: entry {_fmt(self.suggested_entry)} / stop {_fmt(self.suggested_structural_stop)} / stop {self.suggested_stop_pct:.3f}% / risk {self.suggested_risk_atr:.2f} ATR / local room {self.suggested_local_room_r:.2f}R / tick {_fmt(self.price_tick)}\n"
+            f"Fee audit: conservative LIMIT-entry + protective-exit drag {self.estimated_fee_drag_r:.2f}R\n"
             f"Rank score: {self.quality_score}\n"
             f"Сценарий: {self.playbook}\n"
             f"Комментарий: {self.comment}"
@@ -495,8 +733,27 @@ class IntradayReport:
         )
 
 
-def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[IntradayReport, pd.DataFrame, dict[str, pd.DataFrame]]:
-    df_1m = _norm_df(raw_df_1m)
+def analyze_intraday_symbol(
+    symbol: str,
+    raw_df_1m: pd.DataFrame,
+    expected_latest_ts: pd.Timestamp | None = None,
+    precomputed_frames: dict[str, pd.DataFrame] | None = None,
+    price_tick: float | None = None,
+) -> tuple[IntradayReport, pd.DataFrame, dict[str, pd.DataFrame]]:
+    raw_for_analysis = raw_df_1m.copy()
+    if expected_latest_ts is not None and not raw_for_analysis.empty:
+        expected = pd.Timestamp(expected_latest_ts)
+        if expected.tzinfo is None:
+            expected = expected.tz_localize("UTC")
+        else:
+            expected = expected.tz_convert("UTC")
+        if "close_time" in raw_for_analysis.columns:
+            close_ms = pd.to_numeric(raw_for_analysis["close_time"], errors="coerce")
+            raw_for_analysis = raw_for_analysis[close_ms <= int(expected.timestamp() * 1000)]
+        elif "datetime_utc" in raw_for_analysis.columns:
+            opens = pd.to_datetime(raw_for_analysis["datetime_utc"], utc=True, errors="coerce")
+            raw_for_analysis = raw_for_analysis[opens + pd.Timedelta(minutes=1) <= expected]
+    df_1m = _norm_df(raw_for_analysis)
     if df_1m.empty or len(df_1m) < 120:
         report = IntradayReport(
             symbol=symbol,
@@ -526,22 +783,52 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         )
         return report, df_1m, {}
 
-    frames = {
-        "1m": df_1m.tail(24 * 60),
-        "15m": resample_ohlcv(df_1m, "15min"),
-        "1h": resample_ohlcv(df_1m, "1h"),
-        "4h": resample_ohlcv(df_1m, "4h"),
-        "1D": resample_ohlcv(df_1m, "1d"),
-    }
+    latest_ts = df_1m.index[-1]
+    # 1m timestamps are candle OPEN times. Higher-timeframe closure must be
+    # evaluated against the analysis clock (normally exchange server time), not
+    # against the last 1m open timestamp, otherwise every 15m/1h/4h close is
+    # recognized one minute late.
+    if expected_latest_ts is not None:
+        analysis_ts = pd.Timestamp(expected_latest_ts)
+        if analysis_ts.tzinfo is None:
+            analysis_ts = analysis_ts.tz_localize("UTC")
+        else:
+            analysis_ts = analysis_ts.tz_convert("UTC")
+    else:
+        analysis_ts = latest_ts + pd.Timedelta(minutes=1)
+    rolling_24h_start = analysis_ts - pd.Timedelta(hours=24)
+    rolling_24h_1m = df_1m[(df_1m.index >= rolling_24h_start) & (df_1m.index < analysis_ts)]
+    if precomputed_frames:
+        frames = {
+            "1m": rolling_24h_1m,
+            "15m": precomputed_frames["15m"].loc[:latest_ts],
+            "1h": precomputed_frames["1h"].loc[:latest_ts],
+            "4h": precomputed_frames["4h"].loc[:latest_ts],
+            "1D": precomputed_frames["1D"].loc[:latest_ts],
+        }
+    else:
+        frames = {
+            "1m": rolling_24h_1m,
+            "15m": resample_ohlcv(df_1m, "15min"),
+            "1h": resample_ohlcv(df_1m, "1h"),
+            "4h": resample_ohlcv(df_1m, "4h"),
+            "1D": resample_ohlcv(df_1m, "1d"),
+        }
     df_15m = frames["15m"]
     df_1h = frames["1h"]
     df_4h = frames["4h"]
     price = float(df_1m["Close"].iloc[-1])
-    latest_ts = df_1m.index[-1]
-    df_15m_closed = _closed_frame(df_15m, latest_ts, "15min")
+    df_15m_closed = _closed_frame(df_15m, analysis_ts, "15min")
     if df_15m_closed.empty:
         df_15m_closed = df_15m
-    latest_msk = latest_ts.tz_convert("Europe/Moscow")
+    df_1h_closed = _closed_frame(df_1h, analysis_ts, "1h")
+    if df_1h_closed.empty:
+        df_1h_closed = df_1h
+    df_4h_closed = _closed_frame(df_4h, analysis_ts, "4h")
+    if df_4h_closed.empty:
+        df_4h_closed = df_4h
+    df_1d_closed = _closed_frame(frames["1D"], analysis_ts, "1d")
+    latest_msk = analysis_ts.tz_convert("Europe/Moscow")
     day_start_msk = latest_msk.normalize()
     day_start_utc = day_start_msk.tz_convert("UTC")
     day_df = df_1m[df_1m.index >= day_start_utc]
@@ -569,22 +856,66 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     vwap = _vwap(day_df)
 
     tolerance = _data_tolerance(symbol, price)
-    data_warning_reason = None
+    data_warning_reasons: list[str] = []
     check_15m_24h = resample_ohlcv(visible_1m, "15min")
     if not check_15m_24h.empty:
         check_15m_24h_high = float(check_15m_24h["High"].max())
         check_15m_24h_low = float(check_15m_24h["Low"].min())
         if abs(high_24h - check_15m_24h_high) > tolerance or abs(low_24h - check_15m_24h_low) > tolerance:
-            data_warning_reason = (
+            data_warning_reasons.append(
                 f"same-window 1m/15m 24h high/low mismatch: "
                 f"1m_24h={_fmt(high_24h)}/{_fmt(low_24h)} "
                 f"15m_from_1m_24h={_fmt(check_15m_24h_high)}/{_fmt(check_15m_24h_low)} "
                 f"tolerance={_fmt(tolerance)}"
             )
-    data_warning = data_warning_reason is not None
+    integrity_index = visible_1m.index
+    if len(integrity_index) >= 2:
+        gaps = integrity_index.to_series().diff().dropna()
+        missing_minutes = int(sum(max(0, int(delta / pd.Timedelta(minutes=1)) - 1) for delta in gaps if delta > pd.Timedelta(minutes=1)))
+        duplicate_count = int(integrity_index.duplicated().sum())
+        if missing_minutes:
+            data_warning_reasons.append(f"rolling 24h data has {missing_minutes} missing 1m candles")
+        if duplicate_count:
+            data_warning_reasons.append(f"rolling 24h data has {duplicate_count} duplicate timestamps")
+        expected_24h_rows = int((min(analysis_ts, latest_ts + pd.Timedelta(minutes=1)) - rolling_24h_start) / pd.Timedelta(minutes=1))
+        if expected_24h_rows >= 120 and len(integrity_index) < expected_24h_rows - 2:
+            data_warning_reasons.append(f"rolling 24h coverage is incomplete: {len(integrity_index)}/{expected_24h_rows} closed candles")
+    # The 4H trend filter needs more than the 24h level window. Validate the
+    # recent 48h source as well, so a gap just outside rolling-24h cannot distort
+    # the last eight closed 4H candles while levels still look valid.
+    integrity_48h = df_1m[(df_1m.index >= analysis_ts - pd.Timedelta(hours=48)) & (df_1m.index < analysis_ts)].index
+    if len(integrity_48h) >= 2:
+        gaps_48h = integrity_48h.to_series().diff().dropna()
+        missing_48h = int(sum(max(0, int(delta / pd.Timedelta(minutes=1)) - 1) for delta in gaps_48h if delta > pd.Timedelta(minutes=1)))
+        duplicates_48h = int(integrity_48h.duplicated().sum())
+        if missing_48h:
+            data_warning_reasons.append(f"recent 48h data has {missing_48h} missing 1m candles")
+        if duplicates_48h:
+            data_warning_reasons.append(f"recent 48h data has {duplicates_48h} duplicate timestamps")
+
+    if expected_latest_ts is not None:
+        expected = pd.Timestamp(expected_latest_ts)
+        if expected.tzinfo is None:
+            expected = expected.tz_localize("UTC")
+        else:
+            expected = expected.tz_convert("UTC")
+        age = expected - (latest_ts + pd.Timedelta(minutes=1))
+        if age > pd.Timedelta(minutes=3):
+            data_warning_reasons.append(f"latest closed 1m candle is stale by {int(age.total_seconds() // 60)} minutes")
+    data_warning_reason = "; ".join(data_warning_reasons) if data_warning_reasons else None
+    data_warning = bool(data_warning_reasons)
+
+    # Archive consumers must see the same CLOSED HTF candles used by the engine.
+    frames["15m_closed"] = df_15m_closed
+    frames["1h_closed"] = df_1h_closed
+    frames["4h_closed"] = df_4h_closed
+    frames["1D_closed"] = df_1d_closed
 
     buyer, seller, absorption = _pressure_scores(df_1m, df_15m_closed, vwap)
-    atr15 = _atr(df_15m, 14)
+    # All decision features use CLOSED higher-timeframe candles only. The previous
+    # code let unfinished 15m/1h/4h candles influence regime and ATR even though
+    # the archive task explicitly forbids using unfinished candles as confirmation.
+    atr15 = _atr(df_15m_closed, 14)
     atr_pct = atr15 / price * 100 if price else 0.0
     dist_vwap_pct = _safe_pct(price, vwap) if np.isfinite(vwap) else 0.0
     dist_high_pct = abs(_safe_pct(high_24h, price))
@@ -603,9 +934,8 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         impulse_up = recent_15["Close"].iloc[-1] > recent_15["Open"].iloc[-1] and last_body > atr15 * 0.9
         impulse_down = recent_15["Close"].iloc[-1] < recent_15["Open"].iloc[-1] and last_body > atr15 * 0.9
 
-    late_long = (35 if near_24h_high else 0) + (25 if extended_up else 0) + (20 if impulse_up else 0)
-    late_short = (35 if near_24h_low else 0) + (25 if extended_down else 0) + (20 if impulse_down else 0)
-    late_risk = int(_clamp(max(late_long, late_short) + max(0, absorption - 65) * 0.4))
+    late_long = int(_clamp((35 if near_24h_high else 0) + (25 if extended_up else 0) + (20 if impulse_up else 0) + max(0, absorption - 70) * 0.30))
+    late_short = int(_clamp((35 if near_24h_low else 0) + (25 if extended_down else 0) + (20 if impulse_down else 0) + max(0, absorption - 70) * 0.30))
 
     # Sweep detection: use only a CLOSED 15m candle and require real penetration.
     # Do not promote a live/unfinished 15m wick or an equal-high/equal-low touch
@@ -613,21 +943,30 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     last_15 = df_15m_closed.tail(2)
     sweep_up = False
     sweep_down = False
+    prev_24h_high = high_24h
+    prev_24h_low = low_24h
+    sweep_candle_high = float("nan")
+    sweep_candle_low = float("nan")
     if len(last_15) >= 1:
         candle = last_15.iloc[-1]
+        sweep_candle_high = float(candle["High"])
+        sweep_candle_low = float(candle["Low"])
         candle_start = pd.Timestamp(candle.name)
-        hist_before_sweep = frames["1m"][frames["1m"].index < candle_start]
+        hist_before_sweep = df_1m[
+            (df_1m.index < candle_start)
+            & (df_1m.index >= candle_start - pd.Timedelta(hours=24))
+        ]
         if len(hist_before_sweep) > 2:
             prev_24h_high = float(hist_before_sweep["High"].max())
             prev_24h_low = float(hist_before_sweep["Low"].min())
-        else:
-            prev_24h_high = high_24h
-            prev_24h_low = low_24h
         sweep_buffer = _sweep_penetration_tolerance(symbol, price, atr15)
         sweep_up = bool(candle["High"] > prev_24h_high + sweep_buffer and candle["Close"] < prev_24h_high)
         sweep_down = bool(candle["Low"] < prev_24h_low - sweep_buffer and candle["Close"] > prev_24h_low)
 
-    trap_risk = int(_clamp(absorption * 0.55 + late_risk * 0.35 + (25 if sweep_up or sweep_down else 0)))
+    # Directional risks: proximity to the LOW must not block a LONG range/sweep reversal,
+    # and a valid sweep is the setup itself, not an automatic +25 trap penalty.
+    trap_long = int(_clamp(absorption * 0.35 + late_long * 0.45 + (20 if sweep_up else 0) + (10 if seller >= buyer + 12 else 0)))
+    trap_short = int(_clamp(absorption * 0.35 + late_short * 0.45 + (20 if sweep_down else 0) + (10 if buyer >= seller + 12 else 0)))
 
     long_score = 0
     short_score = 0
@@ -636,10 +975,10 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         short_score += 20 if price < vwap else 0
     long_score += 15 if price > day_open else 0
     short_score += 15 if price < day_open else 0
-    long_score += _structure_score(df_1h, "long")
-    short_score += _structure_score(df_1h, "short")
-    long_score += _structure_score(df_15m, "long") // 2
-    short_score += _structure_score(df_15m, "short") // 2
+    long_score += _structure_score(df_1h_closed, "long")
+    short_score += _structure_score(df_1h_closed, "short")
+    long_score += _structure_score(df_15m_closed, "long") // 2
+    short_score += _structure_score(df_15m_closed, "short") // 2
     long_score += 15 if buyer >= seller + 12 else 0
     short_score += 15 if seller >= buyer + 12 else 0
     long_score -= 10 if late_long >= 60 else 0
@@ -647,20 +986,39 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     long_score = int(_clamp(long_score))
     short_score = int(_clamp(short_score))
 
-    range_width_pct = _safe_pct(day_high, day_low)
     score_gap = abs(long_score - short_score)
+    range_ctx = _range_context(df_15m_closed, atr15)
+    range_low = float(range_ctx["low"])
+    range_high = float(range_ctx["high"])
+    range_mid = float(range_ctx["mid"])
+    range_edge_band = float(range_ctx["edge_band"])
+    edge_low = bool(range_ctx["valid"] and np.isfinite(range_low) and price <= range_low + range_edge_band)
+    edge_high = bool(range_ctx["valid"] and np.isfinite(range_high) and price >= range_high - range_edge_band)
+    market_trap_risk = int(_clamp(absorption * 0.55 + min(late_long, late_short) * 0.20 + (15 if score_gap <= 10 else 0)))
     if sweep_up or sweep_down:
         regime = "SWEEP"
+    elif bool(range_ctx["valid"]) and score_gap <= 35:
+        # A validated two-sided range takes precedence over directional scores
+        # produced by a rebound from one edge. Only a wider score separation can
+        # promote it to a trend/breakout state.
+        regime = "RANGE"
     elif long_score >= 70 and long_score >= short_score + 20:
         regime = "TREND_LONG"
     elif short_score >= 70 and short_score >= long_score + 20:
         regime = "TREND_SHORT"
     elif score_gap <= 15:
         regime = "TRANSITION"
-    elif trap_risk >= 75:
+    elif bool(range_ctx["choppy"]) or market_trap_risk >= 70:
         regime = "CHOP"
     else:
-        regime = "RANGE"
+        regime = "TRANSITION"
+
+    if regime == "TREND_LONG" or (regime == "SWEEP" and sweep_down) or (regime == "RANGE" and edge_low):
+        late_risk, trap_risk = late_long, trap_long
+    elif regime == "TREND_SHORT" or (regime == "SWEEP" and sweep_up) or (regime == "RANGE" and edge_high):
+        late_risk, trap_risk = late_short, trap_short
+    else:
+        late_risk, trap_risk = max(late_long, late_short), market_trap_risk
 
     allowed = "WAIT"
     playbook = "none"
@@ -669,25 +1027,38 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     archive_reason = None
 
     near_vwap = abs(dist_vwap_pct) <= max(0.08, atr_pct * 0.5)
-    strict_trap_ok = trap_risk <= 35
-    strict_late_ok = late_risk <= 35
+    strict_trap_ok = trap_risk <= MAX_INTRADAY_TRAP_RISK
+    strict_late_ok = late_risk <= MAX_INTRADAY_LATE_RISK
     long_pressure_edge = buyer - seller
     short_pressure_edge = seller - buyer
-    long_confirmed = _rejection_confirmation(df_1m, df_15m, "long", vwap, latest_ts)
-    short_confirmed = _rejection_confirmation(df_1m, df_15m, "short", vwap, latest_ts)
-    long_edge_min = _trend_pullback_min_edge(symbol)
-    short_edge_min = _trend_pullback_min_edge(symbol)
-    sweep_edge_min = max(10, _trend_pullback_min_edge(symbol) - 2)
-    long_htf_ok, long_htf_reason = _htf_trend_ok(symbol, "long", df_4h)
-    short_htf_ok, short_htf_reason = _htf_trend_ok(symbol, "short", df_4h)
-    long_room_ok, long_room_reason = _day_edge_room_ok(symbol, "long", price, day_high, day_low, atr15)
-    short_room_ok, short_room_reason = _day_edge_room_ok(symbol, "short", price, day_high, day_low, atr15)
+    long_confirmed = _rejection_confirmation(df_1m, df_15m, "long", vwap, analysis_ts)
+    short_confirmed = _rejection_confirmation(df_1m, df_15m, "short", vwap, analysis_ts)
+    sweep_long_confirmed = _rejection_confirmation(df_1m, df_15m, "long", prev_24h_low, analysis_ts)
+    sweep_short_confirmed = _rejection_confirmation(df_1m, df_15m, "short", prev_24h_high, analysis_ts)
+    range_long_level = range_low + max(_data_tolerance(symbol, price) * 0.25, atr15 * 0.10) if np.isfinite(range_low) else float("nan")
+    range_short_level = range_high - max(_data_tolerance(symbol, price) * 0.25, atr15 * 0.10) if np.isfinite(range_high) else float("nan")
+    range_long_confirmed = _rejection_confirmation(df_1m, df_15m, "long", range_long_level, analysis_ts) if np.isfinite(range_long_level) else False
+    range_short_confirmed = _rejection_confirmation(df_1m, df_15m, "short", range_short_level, analysis_ts) if np.isfinite(range_short_level) else False
+    long_edge_min = max(MIN_INTRADAY_PRESSURE_EDGE, _trend_pullback_min_edge(symbol))
+    short_edge_min = max(MIN_INTRADAY_PRESSURE_EDGE, _trend_pullback_min_edge(symbol))
+    sweep_edge_min = MIN_REVERSAL_PRESSURE_EDGE
+    long_htf_ok, long_htf_reason = _htf_trend_ok(symbol, "long", df_4h_closed)
+    short_htf_ok, short_htf_reason = _htf_trend_ok(symbol, "short", df_4h_closed)
+    trend_entry_ref = vwap if np.isfinite(vwap) else price
+    long_room_ok, long_room_reason = _day_edge_room_ok(symbol, "long", trend_entry_ref, day_high, day_low, atr15)
+    short_room_ok, short_room_reason = _day_edge_room_ok(symbol, "short", trend_entry_ref, day_high, day_low, atr15)
     long_reclaim_ok, long_reclaim_reason = _recent_liquidity_reclaim_guard(symbol, df_15m_closed, "long", vwap, day_high, day_low, high_24h, low_24h, atr15)
     short_reclaim_ok, short_reclaim_reason = _recent_liquidity_reclaim_guard(symbol, df_15m_closed, "short", vwap, day_high, day_low, high_24h, low_24h, atr15)
+    long_efficiency, long_move_atr = _trend_efficiency(df_15m_closed, "long", atr15, 8)
+    short_efficiency, short_move_atr = _trend_efficiency(df_15m_closed, "short", atr15, 8)
+    score_gap_ok_long = (long_score - short_score) <= MAX_DIRECTION_SCORE_GAP
+    score_gap_ok_short = (short_score - long_score) <= MAX_DIRECTION_SCORE_GAP
+    long_local_trend_ok = long_efficiency >= MIN_TREND_EFFICIENCY_15M and long_move_atr >= MIN_DIRECTIONAL_MOVE_ATR_15M
+    short_local_trend_ok = short_efficiency >= MIN_TREND_EFFICIENCY_15M and short_move_atr >= MIN_DIRECTIONAL_MOVE_ATR_15M
     pullback_watch_long = regime == "TREND_LONG" and near_vwap and long_score >= 70 and long_pressure_edge >= 8 and trap_risk <= 45 and late_risk <= 45
     pullback_watch_short = regime == "TREND_SHORT" and near_vwap and short_score >= 70 and short_pressure_edge >= 8 and trap_risk <= 45 and late_risk <= 45
-    pullback_ok_long = pullback_watch_long and long_score >= 75 and long_score >= short_score + 25 and long_pressure_edge >= long_edge_min and strict_trap_ok and strict_late_ok and long_confirmed and long_room_ok and long_htf_ok and long_reclaim_ok and not data_warning
-    pullback_ok_short = pullback_watch_short and short_score >= 75 and short_score >= long_score + 25 and short_pressure_edge >= short_edge_min and strict_trap_ok and strict_late_ok and short_confirmed and short_room_ok and short_htf_ok and short_reclaim_ok and not data_warning
+    pullback_ok_long = pullback_watch_long and long_score >= 70 and long_score >= short_score + 20 and score_gap_ok_long and long_pressure_edge >= long_edge_min and strict_trap_ok and strict_late_ok and long_local_trend_ok and long_confirmed and long_room_ok and long_htf_ok and long_reclaim_ok and not data_warning
+    pullback_ok_short = pullback_watch_short and short_score >= 70 and short_score >= long_score + 20 and score_gap_ok_short and short_pressure_edge >= short_edge_min and strict_trap_ok and strict_late_ok and short_local_trend_ok and short_confirmed and short_room_ok and short_htf_ok and short_reclaim_ok and not data_warning
 
     if regime == "TREND_LONG":
         allowed = "LONG_ONLY"
@@ -700,6 +1071,14 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
             decision = "WAIT_CONFIRMATION"
             if long_pressure_edge < long_edge_min:
                 comment = f"Лонг-сценарий есть, но pressure edge слабый (+{long_pressure_edge}, нужно >= {long_edge_min}). Ордер заранее не ставить."
+            elif trap_risk > MAX_INTRADAY_TRAP_RISK:
+                comment = f"Лонг-сценарий есть, но trap risk {trap_risk} выше лимита {MAX_INTRADAY_TRAP_RISK}. Это чаще чоп/ложный VWAP hold."
+            elif late_risk > MAX_INTRADAY_LATE_RISK:
+                comment = f"Лонг-сценарий есть, но late risk {late_risk} выше лимита {MAX_INTRADAY_LATE_RISK}. Не догонять движение."
+            elif not score_gap_ok_long:
+                comment = f"Лонг-score gap {long_score - short_score} слишком перегрет (> {MAX_DIRECTION_SCORE_GAP}); ждать нормальный откат и новый hold."
+            elif not long_local_trend_ok:
+                comment = f"Локальный 15m не подтверждает trend: efficiency {long_efficiency:.2f}, move {long_move_atr:.2f} ATR. Считать RANGE/TRANSITION до нового импульса."
             elif not long_room_ok:
                 comment = f"Лонг-сценарий есть, но RR/room слабый: {long_room_reason}. Ждать пробой/ретест, не входить из середины."
             elif not long_htf_ok:
@@ -722,6 +1101,14 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
             decision = "WAIT_CONFIRMATION"
             if short_pressure_edge < short_edge_min:
                 comment = f"Шорт-сценарий есть, но pressure edge слабый (+{short_pressure_edge}, нужно >= {short_edge_min}). Ордер заранее не ставить."
+            elif trap_risk > MAX_INTRADAY_TRAP_RISK:
+                comment = f"Шорт-сценарий есть, но trap risk {trap_risk} выше лимита {MAX_INTRADAY_TRAP_RISK}. Это чаще чоп/ложный VWAP rejection."
+            elif late_risk > MAX_INTRADAY_LATE_RISK:
+                comment = f"Шорт-сценарий есть, но late risk {late_risk} выше лимита {MAX_INTRADAY_LATE_RISK}. Не догонять движение."
+            elif not score_gap_ok_short:
+                comment = f"Шорт-score gap {short_score - long_score} слишком перегрет (> {MAX_DIRECTION_SCORE_GAP}); ждать нормальный откат и новый rejection."
+            elif not short_local_trend_ok:
+                comment = f"Локальный 15m не подтверждает trend: efficiency {short_efficiency:.2f}, move {short_move_atr:.2f} ATR. Считать RANGE/TRANSITION до нового импульса."
             elif not short_room_ok:
                 comment = f"Шорт-сценарий есть, но RR/room слабый: {short_room_reason}. Ждать пробой/ретест, не входить из середины."
             elif not short_htf_ok:
@@ -737,22 +1124,50 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         playbook = "Sweep Reversal"
         if sweep_down:
             allowed = "LONG_ONLY_AFTER_CONFIRMATION"
-            if buyer >= seller + sweep_edge_min and trap_risk <= 35 and late_risk <= 35 and long_confirmed and not data_warning:
+            if buyer >= seller + sweep_edge_min and trap_risk <= MAX_REVERSAL_TRAP_RISK and late_risk <= MAX_REVERSAL_LATE_RISK and sweep_long_confirmed and long_htf_ok and not data_warning:
                 decision = "MANUAL_REVIEW"
                 comment = "Sweep down Intraday A: low сняли, цена вернулась, выкуп подтверждён. Проверить только LIMIT после подтверждения."
                 archive_reason = "Intraday A Sweep down reversal для ручной проверки"
             else:
                 decision = "WAIT_SWEEP_CONFIRMATION"
-                comment = f"Похоже на sweep вниз, но подтверждения/pressure ещё мало (edge +{buyer - seller}, нужно >= {sweep_edge_min}). Ордер заранее не ставить, ждать закрытие/закрепление."
+                directional_edge = buyer - seller
+                if directional_edge < sweep_edge_min:
+                    comment = f"Sweep вниз есть, но buyer pressure edge {directional_edge:+d} слабее требуемых +{sweep_edge_min}. Ордер заранее не ставить."
+                elif trap_risk > MAX_REVERSAL_TRAP_RISK:
+                    comment = f"Sweep вниз есть, но trap risk {trap_risk} выше лимита {MAX_REVERSAL_TRAP_RISK}. Ждать более чистый reclaim."
+                elif late_risk > MAX_REVERSAL_LATE_RISK:
+                    comment = f"Sweep вниз уже поздний: late risk {late_risk} выше лимита {MAX_REVERSAL_LATE_RISK}. Не догонять отскок."
+                elif not sweep_long_confirmed:
+                    comment = "Sweep вниз есть, но последняя закрытая 1m/15m структура ещё не подтвердила reclaim/hold выше снятого low."
+                elif not long_htf_ok:
+                    comment = f"Sweep вниз подтверждён локально, но 4H против LONG: {long_htf_reason}. Ждать слом/нейтрализацию 4H, не ловить нож."
+                elif data_warning:
+                    comment = f"Sweep вниз есть, но данные ненадёжны: {data_warning_reason}. Сделку не давать."
+                else:
+                    comment = "Sweep вниз пока не прошёл полный набор закрытых подтверждений. Ордер заранее не ставить."
         elif sweep_up:
             allowed = "SHORT_ONLY_AFTER_CONFIRMATION"
-            if seller >= buyer + sweep_edge_min and trap_risk <= 35 and late_risk <= 35 and short_confirmed and not data_warning:
+            if seller >= buyer + sweep_edge_min and trap_risk <= MAX_REVERSAL_TRAP_RISK and late_risk <= MAX_REVERSAL_LATE_RISK and sweep_short_confirmed and short_htf_ok and not data_warning:
                 decision = "MANUAL_REVIEW"
                 comment = "Sweep up Intraday A: high сняли, цена вернулась, продавец подтверждён. Проверить только LIMIT после подтверждения."
                 archive_reason = "Intraday A Sweep up reversal для ручной проверки"
             else:
                 decision = "WAIT_SWEEP_CONFIRMATION"
-                comment = f"Похоже на sweep вверх, но подтверждения/pressure ещё мало (edge +{seller - buyer}, нужно >= {sweep_edge_min}). Ордер заранее не ставить, ждать закрытие/закрепление."
+                directional_edge = seller - buyer
+                if directional_edge < sweep_edge_min:
+                    comment = f"Sweep вверх есть, но seller pressure edge {directional_edge:+d} слабее требуемых +{sweep_edge_min}. Ордер заранее не ставить."
+                elif trap_risk > MAX_REVERSAL_TRAP_RISK:
+                    comment = f"Sweep вверх есть, но trap risk {trap_risk} выше лимита {MAX_REVERSAL_TRAP_RISK}. Ждать более чистый rejection."
+                elif late_risk > MAX_REVERSAL_LATE_RISK:
+                    comment = f"Sweep вверх уже поздний: late risk {late_risk} выше лимита {MAX_REVERSAL_LATE_RISK}. Не догонять откат."
+                elif not sweep_short_confirmed:
+                    comment = "Sweep вверх есть, но последняя закрытая 1m/15m структура ещё не подтвердила rejection/hold ниже снятого high."
+                elif not short_htf_ok:
+                    comment = f"Sweep вверх подтверждён локально, но 4H против SHORT: {short_htf_reason}. Ждать слом/нейтрализацию 4H, не шортить сильный тренд."
+                elif data_warning:
+                    comment = f"Sweep вверх есть, но данные ненадёжны: {data_warning_reason}. Сделку не давать."
+                else:
+                    comment = "Sweep вверх пока не прошёл полный набор закрытых подтверждений. Ордер заранее не ставить."
     elif regime == "TRANSITION":
         allowed = "WAIT"
         playbook = "none"
@@ -761,22 +1176,29 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     elif regime == "RANGE":
         allowed = "BOTH_FROM_EDGES"
         playbook = "Range Edge"
-        edge_low = dist_low_pct <= max(0.12, atr_pct * 0.8)
-        edge_high = dist_high_pct <= max(0.12, atr_pct * 0.8)
-        if edge_low and buyer >= seller + 15 and trap_risk <= 35 and late_risk <= 35 and long_confirmed and not data_warning:
+        if edge_low and buyer >= seller + MIN_REVERSAL_PRESSURE_EDGE and trap_long <= MAX_REVERSAL_TRAP_RISK and late_long <= MAX_REVERSAL_LATE_RISK and range_long_confirmed and long_htf_ok and not data_warning:
+            allowed = "LONG_ONLY"
+            late_risk, trap_risk = late_long, trap_long
             decision = "MANUAL_REVIEW"
-            comment = "Range Edge Intraday A: нижний край диапазона + подтверждённый выкуп. Проверить range-long вручную."
+            comment = f"Range Edge Intraday A: подтверждённый выкуп от закрытого диапазона {_fmt(range_low)}-{_fmt(range_high)}."
             archive_reason = "Intraday A Range Edge LONG для ручной проверки"
-        elif edge_high and seller >= buyer + 15 and trap_risk <= 35 and late_risk <= 35 and short_confirmed and not data_warning:
+        elif edge_high and seller >= buyer + MIN_REVERSAL_PRESSURE_EDGE and trap_short <= MAX_REVERSAL_TRAP_RISK and late_short <= MAX_REVERSAL_LATE_RISK and range_short_confirmed and short_htf_ok and not data_warning:
+            allowed = "SHORT_ONLY"
+            late_risk, trap_risk = late_short, trap_short
             decision = "MANUAL_REVIEW"
-            comment = "Range Edge Intraday A: верхний край диапазона + подтверждённый продавец. Проверить range-short вручную."
+            comment = f"Range Edge Intraday A: подтверждённый продавец от закрытого диапазона {_fmt(range_low)}-{_fmt(range_high)}."
             archive_reason = "Intraday A Range Edge SHORT для ручной проверки"
-        elif edge_low or edge_high:
+        elif edge_low:
+            allowed = "LONG_ONLY_AFTER_CONFIRMATION"
             decision = "WAIT_CONFIRMATION"
-            comment = "Цена у края диапазона, но подтверждения недостаточно. Ордер заранее не ставить, ждать rejection/hold."
+            comment = "Цена у нижнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают LONG."
+        elif edge_high:
+            allowed = "SHORT_ONLY_AFTER_CONFIRMATION"
+            decision = "WAIT_CONFIRMATION"
+            comment = "Цена у верхнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают SHORT."
         else:
             decision = "WAIT_EDGE"
-            comment = "Диапазон. В середине не торговать, ждать верх/низ диапазона."
+            comment = f"Подтверждённый диапазон {_fmt(range_low)}-{_fmt(range_high)}. В середине не торговать."
     else:
         allowed = "WAIT"
         playbook = "none"
@@ -793,22 +1215,112 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         archive_reason = None
         comment = f"Первый час MSK-сессии ({session_age_min} мин): high/low дня ещё нестабильны, возможны выносы. Ордер заранее не ставить, ждать следующий стабильный скан/rejection."
 
+    archive_direction_hint = str(archive_reason or "").upper()
+    if "LONG" in allowed or " LONG" in archive_direction_hint:
+        active_direction = "long"
+        active_pressure_edge = long_pressure_edge
+        active_score_gap = long_score - short_score
+        active_efficiency = long_efficiency
+        active_move_atr = long_move_atr
+    elif "SHORT" in allowed or " SHORT" in archive_direction_hint:
+        active_direction = "short"
+        active_pressure_edge = short_pressure_edge
+        active_score_gap = short_score - long_score
+        active_efficiency = short_efficiency
+        active_move_atr = short_move_atr
+    else:
+        active_direction = ""
+        active_pressure_edge = abs(buyer - seller)
+        active_score_gap = abs(long_score - short_score)
+        active_efficiency = max(long_efficiency, short_efficiency)
+        active_move_atr = 0.0
+
+    if playbook == "Range Edge" and active_direction:
+        active_efficiency = float(_clamp(1.0 - float(range_ctx["efficiency"]), 0.0, 1.0))
+        active_move_atr = 0.0
+
+    entry_ref = vwap
+    invalidation_level: float | None = None
+    target_hint: float | None = None
+    if playbook == "Sweep Reversal" and active_direction == "long":
+        entry_ref = prev_24h_low + max(_data_tolerance(symbol, price) * 0.25, atr15 * 0.05)
+        entry_ref = min(price, entry_ref)
+        invalidation_level = sweep_candle_low
+        target_hint = vwap if np.isfinite(vwap) and vwap > entry_ref else day_open
+    elif playbook == "Sweep Reversal" and active_direction == "short":
+        entry_ref = prev_24h_high - max(_data_tolerance(symbol, price) * 0.25, atr15 * 0.05)
+        entry_ref = max(price, entry_ref)
+        invalidation_level = sweep_candle_high
+        target_hint = vwap if np.isfinite(vwap) and vwap < entry_ref else day_open
+    elif playbook == "Range Edge" and active_direction == "long":
+        entry_ref = min(price, range_long_level)
+        invalidation_level = range_low
+        target_hint = range_mid
+    elif playbook == "Range Edge" and active_direction == "short":
+        entry_ref = max(price, range_short_level)
+        invalidation_level = range_high
+        target_hint = range_mid
+
+    suggested_plan = _suggested_structural_plan(
+        symbol, active_direction, entry_ref, df_15m_closed, atr15,
+        playbook=playbook, invalidation_level=invalidation_level, target_hint=target_hint, price_tick=price_tick,
+    ) if active_direction else {
+        "entry": float("nan"), "stop": float("nan"), "tp1": float("nan"),
+        "tp2": float("nan"), "tp3": float("nan"), "risk_atr": float("nan"),
+        "local_room_r": float("nan"), "warning": None,
+    }
+
+    plan_risk = abs(float(suggested_plan["entry"]) - float(suggested_plan["stop"]))
+    estimated_fee_drag_r = (
+        MEXC_CONSERVATIVE_ENTRY_EXIT_RATE * abs(float(suggested_plan["entry"])) / plan_risk
+        if active_direction and np.isfinite(plan_risk) and plan_risk > 0
+        else float("nan")
+    )
+
+    if decision == "MANUAL_REVIEW" and str(suggested_plan.get("warning") or "").startswith("structural stop"):
+        decision = "WAIT_CONFIRMATION"
+        archive_reason = None
+        comment = f"Структурный стоп слишком широкий для intraday: {suggested_plan['warning']}. Сделку не форсировать."
+
     if decision == "MANUAL_REVIEW":
-        if "LONG" in allowed:
-            pressure_edge = buyer - seller
+        local_room = float(suggested_plan.get("local_room_r", float("nan")))
+        required_room_r = 1.0 if playbook in {"Sweep Reversal", "Range Edge"} else _trend_min_local_room_r(symbol)
+        if np.isfinite(local_room) and local_room < required_room_r:
+            decision = "WAIT_CONFIRMATION"
+            archive_reason = None
+            comment = (
+                f"До ближайшей закрытой 15m-структуры только {local_room:.2f}R (< {required_room_r:.2f}R для {playbook}). "
+                "Вход слишком близко к препятствию; ждать breakout/retest."
+            )
+        else:
+            fee_limit_r = MAX_ESTIMATED_FEE_DRAG_R if playbook == "Trend Pullback" else MAX_REVERSAL_FEE_DRAG_R
+            if np.isfinite(estimated_fee_drag_r) and estimated_fee_drag_r > fee_limit_r:
+                decision = "WAIT_CONFIRMATION"
+                archive_reason = None
+                comment = (
+                    f"План слишком мелкий относительно комиссий MEXC: расчётный drag {estimated_fee_drag_r:.2f}R "
+                    f"> {fee_limit_r:.2f}R. Сделку не давать."
+                )
+
+    if decision == "MANUAL_REVIEW":
+        if active_direction == "long":
+            pressure_edge = long_pressure_edge
             direction_score = long_score
-        elif "SHORT" in allowed:
-            pressure_edge = seller - buyer
+        elif active_direction == "short":
+            pressure_edge = short_pressure_edge
             direction_score = short_score
         else:
             pressure_edge = abs(buyer - seller)
-            direction_score = max(long_score, short_score)
+            direction_score = min(long_score, short_score)
         playbook_bonus = {"Sweep Reversal": 8, "Trend Pullback": 6, "Range Edge": 4}.get(playbook, 0)
+        pressure_quality = _clamp(max(0, pressure_edge) * 4.0)
+        efficiency_quality = _clamp(active_efficiency * 100.0)
         quality_score = int(_clamp(
-            direction_score * 0.40
-            + max(0, pressure_edge) * 0.30
+            direction_score * 0.25
+            + pressure_quality * 0.30
             + (100 - trap_risk) * 0.15
             + (100 - late_risk) * 0.15
+            + efficiency_quality * 0.10
             + playbook_bonus,
             0,
             100,
@@ -816,11 +1328,12 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
     else:
         quality_score = 0
 
-    if decision == "MANUAL_REVIEW" and quality_score < MIN_INTRADAY_GREEN_QUALITY:
+    quality_floor = MIN_INTRADAY_GREEN_QUALITY if playbook == "Trend Pullback" else MIN_REVERSAL_GREEN_QUALITY
+    if decision == "MANUAL_REVIEW" and quality_score < quality_floor:
         decision = "WAIT_CONFIRMATION"
         archive_reason = None
         comment = (
-            f"Кандидат есть, но rank {quality_score} ниже зелёного порога {MIN_INTRADAY_GREEN_QUALITY}. "
+            f"Кандидат есть, но rank {quality_score} ниже зелёного порога {quality_floor} для {playbook}. "
             "Ордер заранее не ставить, ждать следующий скан/дополнительное подтверждение."
         )
         quality_score = 0
@@ -863,5 +1376,21 @@ def analyze_intraday_symbol(symbol: str, raw_df_1m: pd.DataFrame) -> tuple[Intra
         data_warning_reason=data_warning_reason,
         session_age_min=session_age_min,
         low_liquidity_session=low_liquidity_session,
+        pressure_edge=int(active_pressure_edge),
+        direction_score_gap=int(active_score_gap),
+        atr15=float(atr15),
+        trend_efficiency_15m=float(active_efficiency),
+        directional_move_atr_15m=float(active_move_atr),
+        suggested_entry=float(suggested_plan["entry"]),
+        suggested_structural_stop=float(suggested_plan["stop"]),
+        suggested_tp1=float(suggested_plan["tp1"]),
+        suggested_tp2=float(suggested_plan["tp2"]),
+        suggested_tp3=float(suggested_plan["tp3"]),
+        suggested_risk_atr=float(suggested_plan["risk_atr"]),
+        suggested_local_room_r=float(suggested_plan["local_room_r"]),
+        estimated_fee_drag_r=float(estimated_fee_drag_r),
+        plan_warning=suggested_plan.get("warning"),
+        price_tick=float(price_tick) if price_tick is not None and np.isfinite(price_tick) else float("nan"),
+        suggested_stop_pct=(abs(float(suggested_plan["entry"]) - float(suggested_plan["stop"])) / abs(float(suggested_plan["entry"])) * 100.0) if np.isfinite(float(suggested_plan["entry"])) and float(suggested_plan["entry"]) != 0 and np.isfinite(float(suggested_plan["stop"])) else float("nan"),
     )
     return report, df_1m, frames

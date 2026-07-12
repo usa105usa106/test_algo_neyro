@@ -335,6 +335,7 @@ class MexcSpotClient:
         window: DownloadWindow,
         progress_every_requests: int = 10,
         progress_cb: Callable[[float, int, int], Awaitable[None]] | None = None,
+        fail_on_empty_chunk: bool = False,
     ) -> pd.DataFrame:
         if interval not in INTERVAL_MS:
             raise ValueError(f"Unsupported interval: {interval}")
@@ -369,7 +370,15 @@ class MexcSpotClient:
 
             if not chunk:
                 consecutive_empty += 1
-                self.logger.warning("Empty chunk %s %s %s start=%s end=%s; advancing", self.market_type, symbol, interval, start, chunk_end)
+                self.logger.warning("Empty chunk %s %s %s start=%s end=%s attempt=%s", self.market_type, symbol, interval, start, chunk_end, consecutive_empty)
+                if fail_on_empty_chunk:
+                    if consecutive_empty < 3:
+                        await asyncio.sleep(0.75 * consecutive_empty)
+                        continue
+                    raise RuntimeError(
+                        f"Incomplete {interval} data for {symbol}: API returned an empty chunk "
+                        f"{start}-{chunk_end} three times; refusing to skip candles"
+                    )
                 start = chunk_end + interval_ms
                 await asyncio.sleep(0.25 if self.market_type == "futures" else 0.05)
                 if progress_cb and request_count % progress_every_requests == 0:

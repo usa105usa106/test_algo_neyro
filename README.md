@@ -1,4 +1,4 @@
-# ChatGPT Scan Bot 30d — 48_full
+# ChatGPT Scan Bot 30d — 55_full
 
 Telegram bot for manual / semi-automatic trading analysis with ChatGPT.
 
@@ -150,7 +150,7 @@ No trading endpoints exist in this bot: no `place_order`, no `cancel_order`, no 
 If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 days on MEXC), the bot continues if it downloaded at least `MIN_EFFECTIVE_DAYS` days. Default: `20`. It records a warning in `manifest.json` and `/log_full`.
 
 
-## 48_full exact-symbol update
+## 50_full exact-symbol update
 
 - Gold exact: `XAU_USDT` = MEXC `GOLD(XAU)USDT`.
 - BTC exact: `BTC_USDT`.
@@ -160,7 +160,7 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - `XAUT_USDT` and `UKOIL_USDT` are intentionally not used as replacements because prices differ.
 
 
-## 48_full exact-symbol rule
+## 50_full exact-symbol rule
 
 Fallbacks are disabled intentionally. XAU and XAUT have different prices, and WTI and Brent have different prices.
 The bot scans only these exact trade symbols:
@@ -174,7 +174,7 @@ The bot scans only these exact trade symbols:
 If an exact symbol is unavailable, the scan should fail visibly and `/log_full` should be used for diagnostics.
 
 
-## 48_full update
+## 50_full update
 - Fixed text aliases: `gold`/`xau` -> `XAU_USDT`, `oil`/`wti` -> `USOIL_USDT`, `silver`/`xag` -> `SILVER_USDT`.
 - Custom symbols are exact-only. Writing `xaut` scans `XAUT_USDT`; it is not silently replaced by `XAU_USDT`.
 - Removed confusing exact-candidate remapping in archive resolution.
@@ -182,22 +182,22 @@ If an exact symbol is unavailable, the scan should fail visibly and `/log_full` 
 - Custom XAUT/UKOIL scans keep their own setup labels (`Setup XAUT`, `Setup UKOIL`) instead of generic Gold/Oil.
 
 
-## 48_full format note
+## 50_full format note
 - Setup output format uses `SHORT LIMIT` and `LONG LIMIT` instead of `SELL LIMIT` / `BUY LIMIT`.
 - Limit orders and TP1/TP2/TP3 are written in a column.
 
-## 48_full TP compact format note
+## 50_full TP compact format note
 - Setup output now embeds management directly into take-profit lines.
 - TP format: `TP1: price — закрыть 33%, SL в б/у`, `TP2: price — закрыть 33%, SL в б/у`, `TP3: price — закрыть остаток`.
 - Separate `Сопровождение:` section is removed from `setup_format.txt`.
 
-## 48_full update
+## 50_full update
 - `setup_format.txt` now forces the final answer to be one markdown `txt` code block.
 - LIMIT orders must be one per line.
 - TP1/TP2/TP3 must be one per line.
 - Absolute bans were added against writing `Лимит: SHORT LIMIT 1 ... SHORT LIMIT 2 ...` or `Тейки: TP1 ... TP2 ... TP3 ...` on one line.
 
-## 48_full update
+## 50_full update
 - Added separate `🎯 A+ Hunter: ON/OFF` toggle.
 - A+ Hunter runs a top-200 screener loop and waits 5 minutes after the previous loop fully finishes before the next loop starts.
 - If no A+ candidate is found, no archive is created.
@@ -205,7 +205,7 @@ If an exact symbol is unavailable, the scan should fail visibly and `/log_full` 
 - A+ Hunter uses its own `task.txt`: true A+ only, MARKET + LIMIT plan, anti-chase rule. Existing standard and montage task files are unchanged.
 
 
-## 48_full update
+## 50_full update
 - A+ Hunter universe is now top-200 most liquid USDT futures plus forced symbols without duplicates.
 - Forced symbols are resolved only from real MEXC Futures ticker symbols: NVDA/NVIDIA, TSLA, USOIL, SILVER, XAU, BTC, ETH, SP500/US500/SPX, GOOGL/GOOGLE, NAS100/US100/NASDAQ.
 - Existing scan buttons and existing task texts are unchanged.
@@ -246,14 +246,14 @@ INTRADAY_DAYS_BACK=30
 ```
 
 
-## 48_full Intraday 30d no-cache update
+## 50_full Intraday 30d no-cache update
 
 - Intraday default history is now `INTRADAY_DAYS_BACK=30`.
 - If an old environment still has `INTRADAY_DAYS_BACK=7`, the bot forces a minimum of 30 days.
 - Intraday uses fresh in-memory downloads on every scan; no parquet/cache is used.
 - Intraday futures request throttle is set to `0.35s`, matching the A+ Hunter lightweight scan profile.
 
-## 48_full Intraday progress/message order update
+## 50_full Intraday progress/message order update
 
 - Intraday now uses a very short live progress message: `Intraday scan - 10%`, `20%`, `90%`, `100% No candidates`.
 - If green candidates exist, progress shows: `100% Candidates btc, eth`, then `1/3 archive`, `2/3 archive`, `3/3 archive. Ok`.
@@ -261,10 +261,10 @@ INTRADAY_DAYS_BACK=30
 - If a green archive is created, the final status is posted first and the archive file is sent below it.
 - During the 5:00 countdown, the final status message is edited every 15 seconds; the archive remains below it until the next scan starts.
 
-## 48_full Intraday robustness audit
+## 50_full Intraday robustness audit
 - Intraday is fault-tolerant per symbol: if one custom symbol fails to download/analyze, it becomes NO_TRADE/NO_DATA in the status and the remaining symbols continue.
 
-## 48_full Intraday hardening
+## 50_full Intraday hardening
 - Intraday only: stricter MANUAL_REVIEW gates; green now means only clean Intraday A candidate.
 - Added WAIT_CONFIRMATION for interesting zones without 5m/15m rejection/hold confirmation.
 - Added TRANSITION protection so direct TREND_LONG ↔ TREND_SHORT flips require confirmation across scans.
@@ -272,19 +272,19 @@ INTRADAY_DAYS_BACK=30
 - Intraday reports now include explicit day/24h/visible 1m/visible 15m levels and DATA_WARNING fields for chart/data sanity checks.
 
 
-## 48_full Stress Test update
+## 50_full Stress Test update
 - Added `🧪 Stress Test` button.
 - It builds one parquet-only archive named `multi_test-DDMM.zip`.
 - Requested data: Binance Spot `SOLUSDT` 3y, `ADAUSDT` 3y, `XRPUSDT` 3y, `XAUTUSDT` 4 months. `SILVER` is removed.
 - Collection runs with 3 async workers and 10% progress buckets.
 - Stress Test creates no `task.txt`, no `setup_format.txt`, and no `intraday_task.txt`; old modes remain unchanged.
 
-### 48_full Stress Test spot/completeness fix
+### 50_full Stress Test spot/completeness fix
 - Stress Test now uses Binance Spot `/api/v3/klines` backward chunked collection for long 1m history.
 - If any requested symbol returns less than 95% of the requested candles, the bot raises an error, writes details to `/log_full`, and does not send a misleading small archive.
-- Old scan/intraday/task files remain unchanged.
+- Other scan modes and their task files remain unchanged.
 
-### 48_full Stress Test 2 update
+### 50_full Stress Test 2 update
 - Added `🧪 Stress Test 2` button.
 - Stress Test 2 collects MEXC Futures 1m parquet for the last 30 days: `SOL_USDT`, `XRP_USDT`, `ADA_USDT`, `XAUT_USDT`, `XAU_USDT`, `SILVER_USDT`, `BTC_USDT`, `ETH_USDT`.
 - Collection uses 3 async workers and sends 10% progress buckets.
@@ -292,22 +292,77 @@ INTRADAY_DAYS_BACK=30
 - Output archive name: `multi_test2-DDMM.zip`; large archives are split into binary `.part001/.part002/...` pieces that can be reassembled.
 - No task files are created or modified by Stress Test 2.
 
-## 48_full Intraday instruction cleanup
+## 50_full Intraday instruction cleanup
 - Intraday archive instructions no longer mark every pre-entry move toward TP as an automatic missed setup.
 - LIMIT retest remains allowed if price returns to the planned entry/retest zone and closed 15m structure is still valid.
 - TP1 management updated: close 33%; move remainder to BE only after a 15m close beyond TP1 in the trade direction or after TP2.
 - Intraday dataframe normalization now accepts both live lower-case OHLCV and exported archive TitleCase OHLCV for safer audit/replay.
 
-## 48_full Intraday task-only fix
-- Version is now `48_full`.
+## 50_full Intraday task-only fix
+- Version is now `50_full`.
 - Intraday archive instructions now avoid over-confirming green MANUAL_REVIEW candidates: if the report/CSV already contain closed hold/reclaim/rejection, the manual answer must not demand an extra 15m close/retest.
 - Quality 68-69 can remain a cautious Intraday A LIMIT when DATA_WARNING is absent, trap/late are low, pressure supports direction, closed confirmation exists, and RR is clean.
 - Near 24h high/low is not an automatic reject; it can be the TP/liquidity target when room/RR is acceptable and there is no closed rejection/sweep against the trade.
 
 
 
-## 48_full Intraday missed-entry / stop-quality task fix
-- Version is now `48_full`.
+## 50_full Intraday missed-entry / stop-quality task fix
+- Version is now `50_full`.
 - Intraday task only: if TP1 was reached before limit fill, the old setup is MISSED; new entry requires fresh closed 15m confirmation.
 - Intraday task only: stop quality is checked for every symbol; SL inside normal noise / wick zone / liquidity magnet is forbidden.
 - Do not tighten SL just to keep RR attractive; if structural SL ruins RR, answer WAIT.
+
+## 50_full Intraday replay-polished update
+- Historical 5-minute replay was performed on 30d 1m parquet for BTC, ETH, XAU, SILVER, USOIL, GRAM, XRP and ADA.
+- Intraday now uses closed HTF candles, pressure/trap/late/efficiency gates, structural stop audit, local-room gate and MEXC fee-drag gate.
+- Only Intraday logic/task and Intraday duplicate cooldown were changed. See `INTRADAY_STAGE_01_10_REPORT.md`.
+
+
+## 51_full Intraday full-audit fix
+- Fixed dead Sweep Reversal gating by using directional trap/late risk instead of penalizing the valid sweep itself.
+- Fixed Range Edge direction: proximity to the lower edge no longer blocks LONG through the SHORT late-risk score, and vice versa.
+- RANGE now requires a measured closed-15m range with width, path-efficiency, and repeated edge touches; residual states no longer become RANGE automatically.
+- Entry/stop/targets are playbook-aware: VWAP for Trend Pullback, reclaimed prior edge for Sweep Reversal, confirmed range boundary for Range Edge.
+- Local room uses the nearest closed-15m pivot/target obstacle instead of the farthest 2h high/low.
+- Trend Pullback now has a hard minimum of 0.40R to the nearest closed 15m obstacle; the former strong-breakout exception was removed after it admitted low-room stop-outs in replay.
+- SILVER Trend Pullback requires pressure edge >=23 because every filled 20-21 edge candidate in the exact 30d audit stopped out.
+- Live data freshness and recent 1m gaps/duplicates are checked before a green candidate is allowed.
+- Archive HTF CSVs are closed-only (`15m_closed`, `1h_closed`, `4h_closed`).
+- Duplicate suppression fingerprints entry/stop/TP/rank/pressure and is committed only after successful Telegram delivery.
+- Only Intraday logic, Intraday archive task, Intraday sending/cooldown handling, version, and documentation changed.
+- Full Stage 11–12 audit and all-scan replay: `INTRADAY_STAGE_11_12_AUDIT_51_REPORT.md`.
+
+
+## 52_full Intraday frequency + structural-stop update
+- Only Intraday engine/task and the application version were changed.
+- Trend Pullback replay gates are frequency-balanced by asset.
+- Trend stops use 4h of closed 15m structure with a 2.30 ATR floor for crypto/alts and 2.40 ATR for metals/energy; maximum 3.60 ATR.
+- Trend quality/room/fee gates: 66 / 0.20R / 0.80R. Sweep/Range keep the stricter 51_full reversal gates.
+- SILVER Trend Pullback is disabled after a negative exact replay; SILVER Sweep/Range remain available.
+- Historical section for `52_full`.
+
+
+## 54_full Intraday full-replay + live-safety update
+- Full chronological replay covers every eligible 5-minute scan across all 8 assets; no candidate preselection.
+- ETH and ADA Trend Pullback require at least 0.30R room to the nearest closed 15m obstacle; other Trend assets keep 0.20R.
+- Rolling 24h levels and data-integrity checks are timestamp-based; missing 1m chunks abort the Intraday symbol instead of being skipped.
+- Each symbol uses fresh exchange server time, the loop aligns to the next 5-minute boundary, Intraday OFF/ON clears hysteresis, archive cooldown commits only actually included candidates, and build temp directories are removed.
+- Intraday archives export closed 15m/1h/4h/1D CSV context.
+- `/ping` must report `54_full`.
+
+
+## 55_full Intraday duplicate/frequency safety fix
+- Engine thresholds and trade logic are unchanged from 54_full.
+- Duplicate cooldown is 45 minutes and uses quantized Entry/Stop structure, so a materially new setup is not hidden merely because symbol/playbook/direction match the previous one.
+- Stale duplicate keys are pruned from runtime memory.
+- Sweep diagnostics use the actual reversal trap limit.
+- Trend stop lookback documentation is synchronized with code: 20 closed 15m candles = 5 hours.
+- `/ping` must report `55_full`.
+
+
+## Intraday 55_full
+- Цикл: полный скан -> новый таймер 5:00 -> следующий полный скан; без привязки к часам.
+- Trend: all supported assets LONG/SHORT; Sweep/Range доступны всем активам.
+- LIMIT на 0.15 ATR15 глубже VWAP; стоп за 5 часами закрытой 15m структуры (20 свечей), минимум 2.30/2.40 ATR15, максимум 4.00 ATR15.
+- TP: 0.80R / 1.60R / 2.40R.
+- Частота повышается входом и профилем, а не микростопом.

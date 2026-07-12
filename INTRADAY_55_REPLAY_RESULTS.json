@@ -1,0 +1,2064 @@
+{
+  "version": "55_full",
+  "note": "Engine decision thresholds are identical to 54_full; results are the exact supplied-parquet replay used for the 55 audit.",
+  "results": [
+    {
+      "symbol": "BCH_USDT",
+      "start": "2026-06-14 05:05:00+00:00",
+      "end": "2026-07-12 05:00:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "green_timestamps": 35,
+      "distinct_green_episodes": 26,
+      "bot_notifications_60m": 21,
+      "episodes_per_day": 0.928686593079499,
+      "episodes_per_30d": 27.86059779238497,
+      "directions": {
+        "LONG": 16,
+        "SHORT": 10
+      },
+      "playbooks": {
+        "Trend Pullback": 26
+      },
+      "decisions": {
+        "WAIT_PULLBACK": 4694,
+        "WAIT_SWEEP_CONFIRMATION": 258,
+        "WAIT": 2218,
+        "NO_TRADE": 264,
+        "WAIT_CONFIRMATION": 356,
+        "MANUAL_REVIEW": 39,
+        "WAIT_EDGE": 235
+      },
+      "regimes": {
+        "TREND_SHORT": 2406,
+        "SWEEP": 258,
+        "TRANSITION": 2218,
+        "CHOP": 264,
+        "TREND_LONG": 2664,
+        "RANGE": 254
+      },
+      "top_wait_reasons": [
+        [
+          "Лонг-направление есть, но вход сейчас не созрел/может быть поздним",
+          2473
+        ],
+        [
+          "Шорт-направление есть, но вход сейчас не созрел/может быть поздним",
+          2221
+        ],
+        [
+          "Локальный 15m не подтверждает trend: efficiency 0",
+          88
+        ],
+        [
+          "Шорт-сценарий есть, но подтверждения недостаточно",
+          43
+        ],
+        [
+          "Лонг-сценарий есть, но подтверждения недостаточно",
+          39
+        ],
+        [
+          "Шорт-score gap 100 слишком перегрет (> 90); ждать нормальный откат и новый rejection",
+          14
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -9 слабее требуемых +20",
+          14
+        ],
+        [
+          "Шорт-сценарий есть, но старший 4H фильтр против: 4H против SHORT: 4H long_score 35 > short_score 0; нужен breakdown/ретест, не ранний шорт",
+          13
+        ],
+        [
+          "Лонг-сценарий есть, но pressure edge слабый (+8, нужно >= 10)",
+          12
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -20 слабее требуемых +20",
+          10
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -13 слабее требуемых +20",
+          10
+        ],
+        [
+          "Цена у верхнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают SHORT",
+          10
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -14 слабее требуемых +20",
+          9
+        ],
+        [
+          "Цена у нижнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают LONG",
+          9
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -7 слабее требуемых +20",
+          9
+        ]
+      ],
+      "green_examples": [
+        {
+          "ts": "2026-06-15 22:20:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 76,
+          "entry": 226.21395352545272,
+          "stop": 220.3,
+          "tp1": 230.94511634581488,
+          "pressure_edge": 17,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 227.18."
+        },
+        {
+          "ts": "2026-06-18 22:00:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 81,
+          "entry": 199.6754021832305,
+          "stop": 201.61725932608763,
+          "tp1": 198.12191646894476,
+          "pressure_edge": 19,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 199.39."
+        },
+        {
+          "ts": "2026-06-18 23:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 84,
+          "entry": 198.8386330320067,
+          "stop": 200.98256160343527,
+          "tp1": 197.12349017486383,
+          "pressure_edge": 20,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 198.32."
+        },
+        {
+          "ts": "2026-06-18 23:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 78,
+          "entry": 198.83580427650367,
+          "stop": 200.97973284793224,
+          "tp1": 197.1206614193608,
+          "pressure_edge": 15,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 198.58."
+        },
+        {
+          "ts": "2026-06-19 01:20:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 199.01937894739,
+          "stop": 201.12387894739,
+          "tp1": 197.33577894739,
+          "pressure_edge": 13,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 198.84."
+        },
+        {
+          "ts": "2026-06-20 03:40:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 84,
+          "entry": 197.8941763408559,
+          "stop": 196.3876763408559,
+          "tp1": 199.09937634085588,
+          "pressure_edge": 29,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 198.23."
+        },
+        {
+          "ts": "2026-06-20 19:55:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 65,
+          "entry": 198.47050690660708,
+          "stop": 196.8818640494642,
+          "tp1": 199.74142119232138,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 198.79."
+        },
+        {
+          "ts": "2026-06-20 22:20:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 75,
+          "entry": 199.13833990167464,
+          "stop": 197.70285714285714,
+          "tp1": 200.28672610872863,
+          "pressure_edge": 16,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 199.49."
+        },
+        {
+          "ts": "2026-06-21 03:50:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 199.5618698819335,
+          "stop": 198.2738698819335,
+          "tp1": 200.59226988193348,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 199.84."
+        },
+        {
+          "ts": "2026-06-21 19:15:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 198.9284966916677,
+          "stop": 197.5829966916677,
+          "tp1": 200.0048966916677,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 199.24."
+        },
+        {
+          "ts": "2026-06-28 01:05:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 196.49388927632168,
+          "stop": 198.51585714285713,
+          "tp1": 194.87631498309332,
+          "pressure_edge": 11,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 196.19."
+        },
+        {
+          "ts": "2026-06-28 01:20:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 196.46286485419222,
+          "stop": 198.50957142857143,
+          "tp1": 194.82549959468884,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 196.10."
+        },
+        {
+          "ts": "2026-06-28 22:40:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 83,
+          "entry": 191.0220140697195,
+          "stop": 193.24315692686233,
+          "tp1": 189.24509978400522,
+          "pressure_edge": 21,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 190.64."
+        },
+        {
+          "ts": "2026-06-29 00:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 81,
+          "entry": 190.12306328327256,
+          "stop": 192.9062857142857,
+          "tp1": 187.89648533846204,
+          "pressure_edge": 20,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 189.92."
+        },
+        {
+          "ts": "2026-07-01 08:45:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 203.2809173531046,
+          "stop": 200.74598878167603,
+          "tp1": 205.30886021024745,
+          "pressure_edge": 16,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 203.65."
+        },
+        {
+          "ts": "2026-07-02 23:00:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 220.31243880840074,
+          "stop": 217.8957959512579,
+          "tp1": 222.24575309411503,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 220.77."
+        },
+        {
+          "ts": "2026-07-02 23:40:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 79,
+          "entry": 220.51846612604356,
+          "stop": 218.236537554615,
+          "tp1": 222.3440089831864,
+          "pressure_edge": 16,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 221.15."
+        },
+        {
+          "ts": "2026-07-05 14:00:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 78,
+          "entry": 237.76121327790787,
+          "stop": 233.76414184933645,
+          "tp1": 240.958870420765,
+          "pressure_edge": 17,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 238.11."
+        },
+        {
+          "ts": "2026-07-05 14:10:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 74,
+          "entry": 237.75963151189427,
+          "stop": 233.76256008332285,
+          "tp1": 240.9572886547514,
+          "pressure_edge": 14,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 238.07."
+        },
+        {
+          "ts": "2026-07-05 22:15:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 85,
+          "entry": 244.5781797075869,
+          "stop": 238.13442857142857,
+          "tp1": 249.73318061651358,
+          "pressure_edge": 23,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 245.51."
+        }
+      ],
+      "errors": [],
+      "error_count": 0,
+      "elapsed_sec": 423.89238715171814
+    },
+    {
+      "symbol": "BTC_USDT",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "green_timestamps": 31,
+      "distinct_green_episodes": 27,
+      "bot_notifications_60m": 21,
+      "episodes_per_day": 0.9644053081979412,
+      "episodes_per_30d": 28.932159245938237,
+      "directions": {
+        "LONG": 15,
+        "SHORT": 12
+      },
+      "playbooks": {
+        "Trend Pullback": 27
+      },
+      "decisions": {
+        "WAIT": 2422,
+        "WAIT_PULLBACK": 4514,
+        "WAIT_CONFIRMATION": 368,
+        "MANUAL_REVIEW": 40,
+        "NO_TRADE": 235,
+        "WAIT_SWEEP_CONFIRMATION": 249,
+        "WAIT_EDGE": 236
+      },
+      "regimes": {
+        "TRANSITION": 2422,
+        "TREND_SHORT": 2273,
+        "TREND_LONG": 2636,
+        "CHOP": 235,
+        "SWEEP": 249,
+        "RANGE": 249
+      },
+      "top_wait_reasons": [
+        [
+          "Лонг-направление есть, но вход сейчас не созрел/может быть поздним",
+          2437
+        ],
+        [
+          "Шорт-направление есть, но вход сейчас не созрел/может быть поздним",
+          2077
+        ],
+        [
+          "Локальный 15m не подтверждает trend: efficiency 0",
+          82
+        ],
+        [
+          "Лонг-сценарий есть, но подтверждения недостаточно",
+          47
+        ],
+        [
+          "Шорт-сценарий есть, но подтверждения недостаточно",
+          38
+        ],
+        [
+          "Шорт-сценарий есть, но старший 4H фильтр против: 4H против SHORT: 4H long_score 38 > short_score 0; нужен breakdown/ретест, не ранний шорт",
+          26
+        ],
+        [
+          "Лонг-сценарий есть, но старший 4H фильтр против: 4H против LONG: 4H short_score 35 > long_score 0; нужен новый reclaim/слом структуры",
+          20
+        ],
+        [
+          "Шорт-сценарий есть, но старший 4H фильтр против: 4H против SHORT: 4H long_score 30 > short_score 0; нужен breakdown/ретест, не ранний шорт",
+          18
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -17 слабее требуемых +20",
+          14
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -19 слабее требуемых +20",
+          13
+        ],
+        [
+          "Шорт-сценарий есть, но pressure edge слабый (+8, нужно >= 10)",
+          13
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -18 слабее требуемых +20",
+          12
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -16 слабее требуемых +20",
+          11
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -17 слабее требуемых +20",
+          11
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -12 слабее требуемых +20",
+          10
+        ]
+      ],
+      "green_examples": [
+        {
+          "ts": "2026-06-14 08:30:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 76,
+          "entry": 64403.22857483173,
+          "stop": 64171.118571428575,
+          "tp1": 64588.91657755426,
+          "pressure_edge": 15,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,451.90."
+        },
+        {
+          "ts": "2026-06-16 23:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 65764.9689301684,
+          "stop": 66132.89571428573,
+          "tp1": 65470.62750287454,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 65,729.90."
+        },
+        {
+          "ts": "2026-06-16 23:45:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 69,
+          "entry": 65754.53607500013,
+          "stop": 66031.81750357155,
+          "tp1": 65532.71093214299,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 65,687.30."
+        },
+        {
+          "ts": "2026-06-18 03:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 74,
+          "entry": 64427.368327793956,
+          "stop": 64818.08904207967,
+          "tp1": 64114.79175636538,
+          "pressure_edge": 19,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,350.10."
+        },
+        {
+          "ts": "2026-06-18 09:35:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 70,
+          "entry": 64293.36108171652,
+          "stop": 64656.12142857143,
+          "tp1": 64003.15280423259,
+          "pressure_edge": 17,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,269.90."
+        },
+        {
+          "ts": "2026-06-19 01:45:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 62915.71472532184,
+          "stop": 63231.849725321845,
+          "tp1": 62662.80672532184,
+          "pressure_edge": 15,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 62,884.10."
+        },
+        {
+          "ts": "2026-06-19 03:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 62894.69623863747,
+          "stop": 63234.81695292319,
+          "tp1": 62622.5996672089,
+          "pressure_edge": 17,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 62,814.70."
+        },
+        {
+          "ts": "2026-06-19 13:20:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 62706.75526493111,
+          "stop": 63103.81740778826,
+          "tp1": 62389.10555064539,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 62,673.50."
+        },
+        {
+          "ts": "2026-06-21 15:20:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 64166.436279860405,
+          "stop": 63867.40342271755,
+          "tp1": 64405.66256557469,
+          "pressure_edge": 15,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,190.20."
+        },
+        {
+          "ts": "2026-06-21 15:30:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 76,
+          "entry": 64167.42031485295,
+          "stop": 63882.45031485295,
+          "tp1": 64395.39631485295,
+          "pressure_edge": 15,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,229.90."
+        },
+        {
+          "ts": "2026-06-21 15:40:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 76,
+          "entry": 64167.525397952726,
+          "stop": 63882.555397952725,
+          "tp1": 64395.50139795273,
+          "pressure_edge": 15,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,241.00."
+        },
+        {
+          "ts": "2026-06-21 15:50:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 73,
+          "entry": 64168.88502483891,
+          "stop": 63886.85573912463,
+          "tp1": 64394.508453410344,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,226.30."
+        },
+        {
+          "ts": "2026-06-21 19:25:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 64157.53733188952,
+          "stop": 63877.11804617524,
+          "tp1": 64381.87276046095,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,202.60."
+        },
+        {
+          "ts": "2026-06-22 20:45:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 70,
+          "entry": 64410.71937591257,
+          "stop": 64038.33294734114,
+          "tp1": 64708.628518769714,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,457.40."
+        },
+        {
+          "ts": "2026-06-23 04:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 73,
+          "entry": 64086.187420316935,
+          "stop": 64421.57670603122,
+          "tp1": 63817.87599174551,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64,026.50."
+        },
+        {
+          "ts": "2026-06-24 23:10:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 78,
+          "entry": 60954.26609634655,
+          "stop": 61609.7332392037,
+          "tp1": 60429.89238206084,
+          "pressure_edge": 19,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 60,868.90."
+        },
+        {
+          "ts": "2026-06-26 22:20:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 70,
+          "entry": 59815.71554338166,
+          "stop": 59345.398400524515,
+          "tp1": 60191.96925766738,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 59,937.10."
+        },
+        {
+          "ts": "2026-06-28 12:40:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 73,
+          "entry": 60138.757395322566,
+          "stop": 59838.1145381797,
+          "tp1": 60379.27168103686,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 60,215.00."
+        },
+        {
+          "ts": "2026-06-29 01:35:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 67,
+          "entry": 59443.70710141249,
+          "stop": 60289.89352998392,
+          "tp1": 58766.75795855534,
+          "pressure_edge": 10,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 59,224.10."
+        },
+        {
+          "ts": "2026-06-29 16:35:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 59784.92036019391,
+          "stop": 60837.16428571428,
+          "tp1": 58943.12521977761,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 59,674.50."
+        }
+      ],
+      "errors": [],
+      "error_count": 0,
+      "elapsed_sec": 421.4776997566223
+    },
+    {
+      "symbol": "ETH_USDT",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "green_timestamps": 48,
+      "distinct_green_episodes": 34,
+      "bot_notifications_60m": 27,
+      "episodes_per_day": 1.2144363140270371,
+      "episodes_per_30d": 36.433089420811115,
+      "directions": {
+        "SHORT": 16,
+        "LONG": 18
+      },
+      "playbooks": {
+        "Trend Pullback": 34
+      },
+      "decisions": {
+        "WAIT": 2546,
+        "WAIT_PULLBACK": 4533,
+        "WAIT_SWEEP_CONFIRMATION": 219,
+        "WAIT_CONFIRMATION": 370,
+        "NO_TRADE": 122,
+        "MANUAL_REVIEW": 55,
+        "WAIT_EDGE": 219
+      },
+      "regimes": {
+        "TRANSITION": 2546,
+        "TREND_SHORT": 2337,
+        "SWEEP": 219,
+        "TREND_LONG": 2607,
+        "CHOP": 122,
+        "RANGE": 233
+      },
+      "top_wait_reasons": [
+        [
+          "Лонг-направление есть, но вход сейчас не созрел/может быть поздним",
+          2384
+        ],
+        [
+          "Шорт-направление есть, но вход сейчас не созрел/может быть поздним",
+          2149
+        ],
+        [
+          "Локальный 15m не подтверждает trend: efficiency 0",
+          70
+        ],
+        [
+          "Лонг-сценарий есть, но подтверждения недостаточно",
+          57
+        ],
+        [
+          "Шорт-сценарий есть, но подтверждения недостаточно",
+          56
+        ],
+        [
+          "Лонг-сценарий есть, но старший 4H фильтр против: 4H против LONG: 4H short_score 34 > long_score 0; нужен новый reclaim/слом структуры",
+          15
+        ],
+        [
+          "Шорт-сценарий есть, но pressure edge слабый (+8, нужно >= 10)",
+          14
+        ],
+        [
+          "Лонг-сценарий есть, но старший 4H фильтр против: 4H против LONG: 4H short_score 37 > long_score 0; нужен новый reclaim/слом структуры",
+          13
+        ],
+        [
+          "Шорт-сценарий есть, но pressure edge слабый (+9, нужно >= 10)",
+          12
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -17 слабее требуемых +20",
+          11
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -14 слабее требуемых +20",
+          11
+        ],
+        [
+          "Лонг-score gap 100 слишком перегрет (> 90); ждать нормальный откат и новый hold",
+          11
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -19 слабее требуемых +20",
+          10
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -19 слабее требуемых +20",
+          10
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -15 слабее требуемых +20",
+          9
+        ]
+      ],
+      "green_examples": [
+        {
+          "ts": "2026-06-16 20:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 74,
+          "entry": 1791.9313050679787,
+          "stop": 1811.7260907822645,
+          "tp1": 1776.09547649655,
+          "pressure_edge": 16,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,789.24."
+        },
+        {
+          "ts": "2026-06-16 22:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 1796.0447315128495,
+          "stop": 1811.2214457985638,
+          "tp1": 1783.9033600842781,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,793.39."
+        },
+        {
+          "ts": "2026-06-16 23:20:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 1795.5629667965973,
+          "stop": 1809.2348239394544,
+          "tp1": 1784.6254810823116,
+          "pressure_edge": 13,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,792.26."
+        },
+        {
+          "ts": "2026-06-17 03:55:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 1792.3681553792053,
+          "stop": 1774.4051553792053,
+          "tp1": 1806.7385553792053,
+          "pressure_edge": 15,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,793.87."
+        },
+        {
+          "ts": "2026-06-17 05:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 1794.6331495414247,
+          "stop": 1810.7197142857144,
+          "tp1": 1781.7638977459928,
+          "pressure_edge": 14,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,790.65."
+        },
+        {
+          "ts": "2026-06-17 05:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 70,
+          "entry": 1794.5510254112096,
+          "stop": 1810.7197142857144,
+          "tp1": 1781.6160743116056,
+          "pressure_edge": 15,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,790.52."
+        },
+        {
+          "ts": "2026-06-18 03:35:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 79,
+          "entry": 1748.445198680409,
+          "stop": 1763.5342857142857,
+          "tp1": 1736.3739290533076,
+          "pressure_edge": 19,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,746.07."
+        },
+        {
+          "ts": "2026-06-18 03:55:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 86,
+          "entry": 1748.2309939138756,
+          "stop": 1763.5262857142857,
+          "tp1": 1735.9947604735476,
+          "pressure_edge": 20,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,746.22."
+        },
+        {
+          "ts": "2026-06-18 10:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 75,
+          "entry": 1743.5076158573293,
+          "stop": 1756.3613301430437,
+          "tp1": 1733.2246444287578,
+          "pressure_edge": 15,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,740.53."
+        },
+        {
+          "ts": "2026-06-18 11:55:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 1743.583848602545,
+          "stop": 1756.5870628882592,
+          "tp1": 1733.1812771739737,
+          "pressure_edge": 14,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,741.17."
+        },
+        {
+          "ts": "2026-06-18 13:50:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 74,
+          "entry": 1743.814332958132,
+          "stop": 1759.8716186724175,
+          "tp1": 1730.9685043867034,
+          "pressure_edge": 18,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,740.92."
+        },
+        {
+          "ts": "2026-06-18 14:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 82,
+          "entry": 1743.6323375616298,
+          "stop": 1762.4299089902013,
+          "tp1": 1728.5942804187725,
+          "pressure_edge": 19,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,740.59."
+        },
+        {
+          "ts": "2026-06-20 01:30:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 65,
+          "entry": 1706.7294707904641,
+          "stop": 1696.9347565047499,
+          "tp1": 1714.5652422190356,
+          "pressure_edge": 10,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,708.40."
+        },
+        {
+          "ts": "2026-06-21 06:40:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 69,
+          "entry": 1735.9340042581264,
+          "stop": 1727.4256471152692,
+          "tp1": 1742.7406899724122,
+          "pressure_edge": 14,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,737.16."
+        },
+        {
+          "ts": "2026-06-23 03:45:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 74,
+          "entry": 1728.1822239970606,
+          "stop": 1740.863438282775,
+          "tp1": 1718.0372525684893,
+          "pressure_edge": 13,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,727.06."
+        },
+        {
+          "ts": "2026-06-25 23:15:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 69,
+          "entry": 1570.0422211849364,
+          "stop": 1552.3652857142856,
+          "tp1": 1584.183769561457,
+          "pressure_edge": 14,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,571.66."
+        },
+        {
+          "ts": "2026-06-25 23:40:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 67,
+          "entry": 1570.7246859150155,
+          "stop": 1552.349857142857,
+          "tp1": 1585.4245489327423,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,574.20."
+        },
+        {
+          "ts": "2026-06-27 01:00:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 67,
+          "entry": 1574.2865757063564,
+          "stop": 1563.5932185634992,
+          "tp1": 1582.8412614206422,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,575.92."
+        },
+        {
+          "ts": "2026-06-27 01:30:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 67,
+          "entry": 1574.3072407210211,
+          "stop": 1564.1576692924496,
+          "tp1": 1582.4268978638784,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,576.38."
+        },
+        {
+          "ts": "2026-06-28 22:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 67,
+          "entry": 1569.4998009794342,
+          "stop": 1585.9858724080057,
+          "tp1": 1556.310943836577,
+          "pressure_edge": 11,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 1,566.90."
+        }
+      ],
+      "errors": [],
+      "error_count": 0,
+      "elapsed_sec": 421.173645734787
+    },
+    {
+      "symbol": "SILVER_USDT",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "green_timestamps": 124,
+      "distinct_green_episodes": 68,
+      "bot_notifications_60m": 47,
+      "episodes_per_day": 2.4288726280540742,
+      "episodes_per_30d": 72.86617884162223,
+      "directions": {
+        "LONG": 38,
+        "SHORT": 30
+      },
+      "playbooks": {
+        "Trend Pullback": 68
+      },
+      "decisions": {
+        "WAIT": 2507,
+        "WAIT_CONFIRMATION": 683,
+        "WAIT_PULLBACK": 3868,
+        "MANUAL_REVIEW": 137,
+        "WAIT_EDGE": 225,
+        "WAIT_SWEEP_CONFIRMATION": 317,
+        "NO_TRADE": 327
+      },
+      "regimes": {
+        "TRANSITION": 2507,
+        "TREND_LONG": 2171,
+        "RANGE": 253,
+        "SWEEP": 318,
+        "CHOP": 327,
+        "TREND_SHORT": 2488
+      },
+      "top_wait_reasons": [
+        [
+          "Шорт-направление есть, но вход сейчас не созрел/может быть поздним",
+          2054
+        ],
+        [
+          "Лонг-направление есть, но вход сейчас не созрел/может быть поздним",
+          1814
+        ],
+        [
+          "Лонг-сценарий есть, но подтверждения недостаточно",
+          139
+        ],
+        [
+          "Локальный 15m не подтверждает trend: efficiency 0",
+          102
+        ],
+        [
+          "Шорт-сценарий есть, но подтверждения недостаточно",
+          77
+        ],
+        [
+          "Шорт-сценарий есть, но старший 4H фильтр против: 4H против SHORT: 4H long_score 35 > short_score 0; нужен breakdown/ретест, не ранний шорт",
+          28
+        ],
+        [
+          "Шорт-score gap 100 слишком перегрет (> 90); ждать нормальный откат и новый rejection",
+          25
+        ],
+        [
+          "Лонг-сценарий есть, но старший 4H фильтр против: 4H против LONG: 4H short_score 40 > long_score 0; нужен новый reclaim/слом структуры",
+          22
+        ],
+        [
+          "Шорт-сценарий есть, но pressure edge слабый (+8, нужно >= 10)",
+          20
+        ],
+        [
+          "Шорт-сценарий есть, но старший 4H фильтр против: 4H против SHORT: 4H long_score 28 > short_score 1; нужен breakdown/ретест, не ранний шорт",
+          16
+        ],
+        [
+          "Шорт-сценарий есть, но pressure edge слабый (+9, нужно >= 10)",
+          15
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -20 слабее требуемых +20",
+          15
+        ],
+        [
+          "Цена у верхнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают SHORT",
+          15
+        ],
+        [
+          "Лонг-сценарий есть, но старший 4H фильтр против: 4H против LONG: 4H short_score 33 > long_score 0; нужен новый reclaim/слом структуры",
+          14
+        ],
+        [
+          "Цена у нижнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают LONG",
+          13
+        ]
+      ],
+      "green_examples": [
+        {
+          "ts": "2026-06-14 06:50:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 82,
+          "entry": 68.15897863522018,
+          "stop": 67.95155006379161,
+          "tp1": 68.32492149236303,
+          "pressure_edge": 21,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 68.2200."
+        },
+        {
+          "ts": "2026-06-14 07:05:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 83,
+          "entry": 68.15993259212205,
+          "stop": 67.95764687783634,
+          "tp1": 68.32176116355062,
+          "pressure_edge": 22,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 68.2100."
+        },
+        {
+          "ts": "2026-06-14 07:45:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 68.16144848944258,
+          "stop": 67.96601991801401,
+          "tp1": 68.31779134658542,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 68.2200."
+        },
+        {
+          "ts": "2026-06-14 07:55:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 68.1628875686041,
+          "stop": 67.96745899717554,
+          "tp1": 68.31923042574695,
+          "pressure_edge": 16,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 68.2000."
+        },
+        {
+          "ts": "2026-06-14 08:05:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 68.1636135284753,
+          "stop": 67.96304209990387,
+          "tp1": 68.32407067133244,
+          "pressure_edge": 14,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 68.2100."
+        },
+        {
+          "ts": "2026-06-14 13:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 83,
+          "entry": 68.2092600972758,
+          "stop": 68.48011724013294,
+          "tp1": 67.99257438299009,
+          "pressure_edge": 22,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 68.1600."
+        },
+        {
+          "ts": "2026-06-14 18:40:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 70,
+          "entry": 68.14169563508122,
+          "stop": 68.47255277793836,
+          "tp1": 67.8770099207955,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 68.0700."
+        },
+        {
+          "ts": "2026-06-16 16:05:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 83,
+          "entry": 69.9493771240805,
+          "stop": 69.05451998122336,
+          "tp1": 70.6652628383662,
+          "pressure_edge": 28,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 70.1400."
+        },
+        {
+          "ts": "2026-06-16 22:00:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 70,
+          "entry": 70.0963561499342,
+          "stop": 70.515,
+          "tp1": 69.76144106988156,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 70.0400."
+        },
+        {
+          "ts": "2026-06-16 22:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 65,
+          "entry": 70.09971379927632,
+          "stop": 70.515,
+          "tp1": 69.76748483869737,
+          "pressure_edge": 10,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 70.0400."
+        },
+        {
+          "ts": "2026-06-17 01:25:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 67,
+          "entry": 70.22842159598422,
+          "stop": 69.7861358816985,
+          "tp1": 70.5822501674128,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 70.2600."
+        },
+        {
+          "ts": "2026-06-17 01:45:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 76,
+          "entry": 70.23099291984258,
+          "stop": 69.75270720555686,
+          "tp1": 70.61362149127115,
+          "pressure_edge": 15,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 70.3000."
+        },
+        {
+          "ts": "2026-06-17 05:55:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 77,
+          "entry": 70.23516910060495,
+          "stop": 69.80659767203352,
+          "tp1": 70.57802624346209,
+          "pressure_edge": 23,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 70.3500."
+        },
+        {
+          "ts": "2026-06-17 06:45:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 76,
+          "entry": 70.2428082435649,
+          "stop": 69.82795110070775,
+          "tp1": 70.57469395785061,
+          "pressure_edge": 14,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 70.2700."
+        },
+        {
+          "ts": "2026-06-17 07:10:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 70.24484701099195,
+          "stop": 69.8419898681348,
+          "tp1": 70.56713272527766,
+          "pressure_edge": 10,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 70.3300."
+        },
+        {
+          "ts": "2026-06-18 22:35:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 80,
+          "entry": 65.81851401047722,
+          "stop": 66.42537115333437,
+          "tp1": 65.3330282961915,
+          "pressure_edge": 17,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 65.6800."
+        },
+        {
+          "ts": "2026-06-19 11:10:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 79,
+          "entry": 64.73223178230315,
+          "stop": 65.455,
+          "tp1": 64.15401720814566,
+          "pressure_edge": 20,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64.6800."
+        },
+        {
+          "ts": "2026-06-20 14:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 85,
+          "entry": 64.88200001281723,
+          "stop": 65.14428572710294,
+          "tp1": 64.67217144138866,
+          "pressure_edge": 23,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 64.8200."
+        },
+        {
+          "ts": "2026-06-20 22:00:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 81,
+          "entry": 65.07091492828873,
+          "stop": 64.78805778543159,
+          "tp1": 65.29720064257444,
+          "pressure_edge": 24,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 65.1100."
+        },
+        {
+          "ts": "2026-06-21 03:35:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 88,
+          "entry": 65.13140337423356,
+          "stop": 64.90271428571428,
+          "tp1": 65.31435464504898,
+          "pressure_edge": 24,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 65.1500."
+        }
+      ],
+      "errors": [],
+      "error_count": 0,
+      "elapsed_sec": 423.5717089176178
+    },
+    {
+      "symbol": "USOIL_USDT",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "green_timestamps": 103,
+      "distinct_green_episodes": 70,
+      "bot_notifications_60m": 52,
+      "episodes_per_day": 2.5003100582909585,
+      "episodes_per_30d": 75.00930174872876,
+      "directions": {
+        "LONG": 35,
+        "SHORT": 35
+      },
+      "playbooks": {
+        "Trend Pullback": 70
+      },
+      "decisions": {
+        "WAIT_PULLBACK": 4107,
+        "WAIT_EDGE": 266,
+        "WAIT": 2486,
+        "WAIT_SWEEP_CONFIRMATION": 309,
+        "WAIT_CONFIRMATION": 504,
+        "NO_TRADE": 278,
+        "MANUAL_REVIEW": 114
+      },
+      "regimes": {
+        "TREND_SHORT": 2529,
+        "RANGE": 292,
+        "TRANSITION": 2486,
+        "SWEEP": 309,
+        "CHOP": 278,
+        "TREND_LONG": 2170
+      },
+      "top_wait_reasons": [
+        [
+          "Шорт-направление есть, но вход сейчас не созрел/может быть поздним",
+          2232
+        ],
+        [
+          "Лонг-направление есть, но вход сейчас не созрел/может быть поздним",
+          1875
+        ],
+        [
+          "Локальный 15m не подтверждает trend: efficiency 0",
+          121
+        ],
+        [
+          "Шорт-сценарий есть, но подтверждения недостаточно",
+          109
+        ],
+        [
+          "Лонг-сценарий есть, но подтверждения недостаточно",
+          73
+        ],
+        [
+          "Лонг-сценарий есть, но pressure edge слабый (+8, нужно >= 10)",
+          22
+        ],
+        [
+          "Лонг-score gap 100 слишком перегрет (> 90); ждать нормальный откат и новый hold",
+          18
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -20 слабее требуемых +20",
+          16
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -18 слабее требуемых +20",
+          16
+        ],
+        [
+          "Sweep вверх есть, но seller pressure edge -18 слабее требуемых +20",
+          14
+        ],
+        [
+          "Цена у нижнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают LONG",
+          14
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -15 слабее требуемых +20",
+          13
+        ],
+        [
+          "Шорт-сценарий есть, но pressure edge слабый (+8, нужно >= 10)",
+          12
+        ],
+        [
+          "Цена у верхнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают SHORT",
+          12
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -21 слабее требуемых +20",
+          11
+        ]
+      ],
+      "green_examples": [
+        {
+          "ts": "2026-06-14 16:30:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 74,
+          "entry": 81.35962151213756,
+          "stop": 80.10305008356613,
+          "tp1": 82.36487865499471,
+          "pressure_edge": 14,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 81.6200."
+        },
+        {
+          "ts": "2026-06-15 07:00:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 79.2490789899333,
+          "stop": 79.8730789899333,
+          "tp1": 78.7498789899333,
+          "pressure_edge": 13,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 79.2100."
+        },
+        {
+          "ts": "2026-06-15 11:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 65,
+          "entry": 79.19487718669137,
+          "stop": 80.02287718669136,
+          "tp1": 78.53247718669138,
+          "pressure_edge": 10,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 79.0500."
+        },
+        {
+          "ts": "2026-06-15 11:35:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 65,
+          "entry": 79.19160712090469,
+          "stop": 79.99217854947612,
+          "tp1": 78.55114997804755,
+          "pressure_edge": 10,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 79.0800."
+        },
+        {
+          "ts": "2026-06-15 12:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 67,
+          "entry": 79.18732206468397,
+          "stop": 79.93817920754111,
+          "tp1": 78.58663635039825,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 79.0400."
+        },
+        {
+          "ts": "2026-06-15 12:40:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 79.18630527480443,
+          "stop": 79.93716241766157,
+          "tp1": 78.58561956051871,
+          "pressure_edge": 16,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 78.9900."
+        },
+        {
+          "ts": "2026-06-15 13:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 79.17968057312706,
+          "stop": 79.86710914455563,
+          "tp1": 78.6297377159842,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 79.1200."
+        },
+        {
+          "ts": "2026-06-15 13:50:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 79.18090967608735,
+          "stop": 79.89233824751592,
+          "tp1": 78.6117668189445,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 79.1100."
+        },
+        {
+          "ts": "2026-06-15 17:40:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 69,
+          "entry": 79.15398471551114,
+          "stop": 79.85684185836828,
+          "tp1": 78.59169900122544,
+          "pressure_edge": 14,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 79.0000."
+        },
+        {
+          "ts": "2026-06-16 22:10:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 75.96379644793033,
+          "stop": 76.69751073364462,
+          "tp1": 75.3768250193589,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 75.8300."
+        },
+        {
+          "ts": "2026-06-17 09:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 78,
+          "entry": 75.35402072668637,
+          "stop": 76.57287786954352,
+          "tp1": 74.37893501240066,
+          "pressure_edge": 18,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 75.1100."
+        },
+        {
+          "ts": "2026-06-17 18:30:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 79,
+          "entry": 75.95011038795246,
+          "stop": 74.89753895938104,
+          "tp1": 76.7921675308096,
+          "pressure_edge": 22,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 76.2000."
+        },
+        {
+          "ts": "2026-06-18 00:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 80,
+          "entry": 75.32647165947446,
+          "stop": 76.06018594518875,
+          "tp1": 74.73950023090303,
+          "pressure_edge": 18,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 75.2600."
+        },
+        {
+          "ts": "2026-06-18 00:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 80,
+          "entry": 75.32660538688972,
+          "stop": 76.0740339583183,
+          "tp1": 74.72866252974687,
+          "pressure_edge": 19,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 75.1700."
+        },
+        {
+          "ts": "2026-06-18 12:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 64,
+          "entry": 74.66146778597891,
+          "stop": 75.6231820716932,
+          "tp1": 73.8920963574075,
+          "pressure_edge": 14,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 74.4500."
+        },
+        {
+          "ts": "2026-06-19 10:25:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 64,
+          "entry": 75.78758346377988,
+          "stop": 74.89101203520846,
+          "tp1": 76.50484060663702,
+          "pressure_edge": 10,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 75.9200."
+        },
+        {
+          "ts": "2026-06-19 10:35:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 73,
+          "entry": 75.79044552733171,
+          "stop": 74.91615981304601,
+          "tp1": 76.48987409876028,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 76.0000."
+        },
+        {
+          "ts": "2026-06-20 02:10:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 87,
+          "entry": 77.02738143180902,
+          "stop": 76.35414285714285,
+          "tp1": 77.56597229154195,
+          "pressure_edge": 26,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 77.1300."
+        },
+        {
+          "ts": "2026-06-20 03:05:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 76,
+          "entry": 77.02684851913095,
+          "stop": 76.35585714285713,
+          "tp1": 77.56364162015001,
+          "pressure_edge": 13,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 77.0800."
+        },
+        {
+          "ts": "2026-06-20 03:15:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 77.027595621408,
+          "stop": 76.35557142857142,
+          "tp1": 77.56521497567725,
+          "pressure_edge": 10,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 77.1400."
+        }
+      ],
+      "errors": [],
+      "error_count": 0,
+      "elapsed_sec": 422.5462989807129
+    },
+    {
+      "symbol": "XAU_USDT",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "green_timestamps": 39,
+      "distinct_green_episodes": 25,
+      "bot_notifications_60m": 19,
+      "episodes_per_day": 0.8929678779610567,
+      "episodes_per_30d": 26.7890363388317,
+      "directions": {
+        "LONG": 9,
+        "SHORT": 16
+      },
+      "playbooks": {
+        "Trend Pullback": 25
+      },
+      "decisions": {
+        "WAIT_CONFIRMATION": 1050,
+        "WAIT_PULLBACK": 3657,
+        "NO_TRADE": 315,
+        "WAIT": 2614,
+        "MANUAL_REVIEW": 44,
+        "WAIT_SWEEP_CONFIRMATION": 237,
+        "WAIT_EDGE": 147
+      },
+      "regimes": {
+        "TREND_LONG": 2260,
+        "CHOP": 315,
+        "TRANSITION": 2614,
+        "TREND_SHORT": 2462,
+        "SWEEP": 237,
+        "RANGE": 176
+      },
+      "top_wait_reasons": [
+        [
+          "Шорт-направление есть, но вход сейчас не созрел/может быть поздним",
+          1918
+        ],
+        [
+          "Лонг-направление есть, но вход сейчас не созрел/может быть поздним",
+          1739
+        ],
+        [
+          "Лонг-сценарий есть, но подтверждения недостаточно",
+          206
+        ],
+        [
+          "Локальный 15m не подтверждает trend: efficiency 0",
+          187
+        ],
+        [
+          "Шорт-сценарий есть, но подтверждения недостаточно",
+          168
+        ],
+        [
+          "Шорт-сценарий есть, но pressure edge слабый (+8, нужно >= 10)",
+          35
+        ],
+        [
+          "Шорт-score gap 100 слишком перегрет (> 90); ждать нормальный откат и новый rejection",
+          29
+        ],
+        [
+          "Шорт-сценарий есть, но старший 4H фильтр против: 4H против SHORT: 4H long_score 40 > short_score 0; нужен breakdown/ретест, не ранний шорт",
+          27
+        ],
+        [
+          "Лонг-сценарий есть, но pressure edge слабый (+8, нужно >= 10)",
+          23
+        ],
+        [
+          "План слишком мелкий относительно комиссий MEXC: расчётный drag 1",
+          23
+        ],
+        [
+          "Sweep вниз есть, но buyer pressure edge -19 слабее требуемых +20",
+          22
+        ],
+        [
+          "Лонг-score gap 100 слишком перегрет (> 90); ждать нормальный откат и новый hold",
+          19
+        ],
+        [
+          "План слишком мелкий относительно комиссий MEXC: расчётный drag 2",
+          18
+        ],
+        [
+          "Цена у верхнего края подтверждённого диапазона, но rejection/pressure/4H-фильтр ещё не разрешают SHORT",
+          17
+        ],
+        [
+          "Шорт-score gap 98 слишком перегрет (> 90); ждать нормальный откат и новый rejection",
+          15
+        ]
+      ],
+      "green_examples": [
+        {
+          "ts": "2026-06-14 12:35:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 66,
+          "entry": 4232.976059021524,
+          "stop": 4226.072,
+          "tp1": 4238.499306238743,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,233.82."
+        },
+        {
+          "ts": "2026-06-16 20:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 79,
+          "entry": 4334.993917926974,
+          "stop": 4349.654428571428,
+          "tp1": 4323.265509411411,
+          "pressure_edge": 16,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,333.17."
+        },
+        {
+          "ts": "2026-06-16 23:05:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 71,
+          "entry": 4334.042576472073,
+          "stop": 4326.120862186359,
+          "tp1": 4340.379947900645,
+          "pressure_edge": 16,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,336.56."
+        },
+        {
+          "ts": "2026-06-17 07:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 75,
+          "entry": 4331.841470865931,
+          "stop": 4347.194613723074,
+          "tp1": 4319.558956580217,
+          "pressure_edge": 16,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,329.13."
+        },
+        {
+          "ts": "2026-06-17 08:10:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 81,
+          "entry": 4331.709231064173,
+          "stop": 4346.693802492744,
+          "tp1": 4319.721573921316,
+          "pressure_edge": 20,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,328.74."
+        },
+        {
+          "ts": "2026-06-17 11:25:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 4331.229170739465,
+          "stop": 4343.344027882322,
+          "tp1": 4321.53728502518,
+          "pressure_edge": 12,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,330.41."
+        },
+        {
+          "ts": "2026-06-17 11:45:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 75,
+          "entry": 4331.191621008152,
+          "stop": 4342.946478151009,
+          "tp1": 4321.787735293866,
+          "pressure_edge": 17,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,327.06."
+        },
+        {
+          "ts": "2026-06-17 11:55:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 75,
+          "entry": 4331.1824057025815,
+          "stop": 4342.937262845438,
+          "tp1": 4321.778519988296,
+          "pressure_edge": 17,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,327.35."
+        },
+        {
+          "ts": "2026-06-19 09:45:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 75,
+          "entry": 4169.571250763352,
+          "stop": 4191.716393620494,
+          "tp1": 4151.855136477638,
+          "pressure_edge": 14,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,165.03."
+        },
+        {
+          "ts": "2026-06-21 09:30:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 72,
+          "entry": 4163.513919404668,
+          "stop": 4157.654490833239,
+          "tp1": 4168.201462261811,
+          "pressure_edge": 14,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,165.51."
+        },
+        {
+          "ts": "2026-06-21 14:00:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 66,
+          "entry": 4164.207998613914,
+          "stop": 4158.783998613914,
+          "tp1": 4168.547198613915,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,165.30."
+        },
+        {
+          "ts": "2026-06-21 14:20:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 70,
+          "entry": 4164.218641898072,
+          "stop": 4158.849499040929,
+          "tp1": 4168.513956183786,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,165.92."
+        },
+        {
+          "ts": "2026-06-24 07:30:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 73,
+          "entry": 4088.1297967460205,
+          "stop": 4110.3520824603065,
+          "tp1": 4070.3519681745915,
+          "pressure_edge": 14,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,086.44."
+        },
+        {
+          "ts": "2026-06-24 22:15:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 75,
+          "entry": 4008.071944658045,
+          "stop": 4028.4856589437595,
+          "tp1": 3991.7409732294736,
+          "pressure_edge": 20,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,003.62."
+        },
+        {
+          "ts": "2026-06-25 22:35:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 75,
+          "entry": 4030.4159626723977,
+          "stop": 4015.5153912438263,
+          "tp1": 4042.336419815255,
+          "pressure_edge": 19,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,032.03."
+        },
+        {
+          "ts": "2026-06-25 23:30:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 66,
+          "entry": 4030.0678717695646,
+          "stop": 4015.2650146267074,
+          "tp1": 4041.9101574838505,
+          "pressure_edge": 15,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,032.86."
+        },
+        {
+          "ts": "2026-06-29 03:50:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 66,
+          "entry": 4073.0853572392894,
+          "stop": 4099.742500096432,
+          "tp1": 4051.759642953575,
+          "pressure_edge": 10,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,069.86."
+        },
+        {
+          "ts": "2026-06-29 04:10:00+00:00",
+          "direction": "SHORT",
+          "playbook": "Trend Pullback",
+          "quality": 65,
+          "entry": 4072.900458728956,
+          "stop": 4098.126173014671,
+          "tp1": 4052.719887300384,
+          "pressure_edge": 10,
+          "regime": "TREND_SHORT",
+          "comment": "Шорт Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,068.88."
+        },
+        {
+          "ts": "2026-07-01 22:40:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 68,
+          "entry": 4039.1481161238175,
+          "stop": 4022.7441161238175,
+          "tp1": 4052.2713161238175,
+          "pressure_edge": 12,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,042.14."
+        },
+        {
+          "ts": "2026-07-03 09:45:00+00:00",
+          "direction": "LONG",
+          "playbook": "Trend Pullback",
+          "quality": 73,
+          "entry": 4171.919819161801,
+          "stop": 4156.362676304658,
+          "tp1": 4184.365533447515,
+          "pressure_edge": 16,
+          "regime": "TREND_LONG",
+          "comment": "Лонг Intraday A: тренд + откат к VWAP/зоне + подтверждение rejection/hold. Цена 4,174.02."
+        }
+      ],
+      "errors": [],
+      "error_count": 0,
+      "elapsed_sec": 423.4465835094452
+    }
+  ]
+}

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
+import pandas as pd
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
@@ -48,7 +49,7 @@ BTN_STRESS_TEST2 = "stress_test2"
 BTN_SCAN_PREFIX = "scan:"
 APLUS_SYMBOL_COOLDOWN_SEC = 45 * 60
 INTRADAY_DEFAULT_SYMBOLS = ["BTC_USDT", "ETH_USDT", "XAU_USDT", "SILVER_USDT", "USOIL_USDT"]
-INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC = 20 * 60
+INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC = 45 * 60
 
 
 _INTRADAY_DECISION_ORDER = {
@@ -75,6 +76,119 @@ def _intraday_sort_key(report: Any) -> tuple[int, int, str]:
     return (decision_order, -quality, symbol)
 
 
+def _intraday_candidate_signature(reports: list[Any]) -> str:
+    """Meaningful candidate fingerprint for duplicate suppression.
+
+    A changed entry/stop/TP, rank or pressure must be allowed through even when
+    symbol/regime/playbook are unchanged. Small sub-noise price drift is quantized.
+    """
+    parts: list[str] = []
+    for r in sorted(reports, key=lambda x: str(getattr(x, "symbol", ""))):
+        price = abs(float(getattr(r, "price", 0.0) or 0.0))
+        atr15 = abs(float(getattr(r, "atr15", 0.0) or 0.0))
+        step = max(price * 0.0001, atr15 * 0.10, 1e-12)
+
+        def q(value: Any) -> str:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return "nan"
+            if not math.isfinite(number):
+                return "nan"
+            return str(int(round(number / step)))
+
+        direction_text = f"{getattr(r, 'allowed_direction', '')} {getattr(r, 'archive_reason', '')}".upper()
+        if "LONG" in direction_text:
+            direction = "L"
+        elif "SHORT" in direction_text:
+            direction = "S"
+        else:
+            entry = float(getattr(r, "suggested_entry", float("nan")))
+            stop = float(getattr(r, "suggested_structural_stop", float("nan")))
+            direction = "L" if math.isfinite(entry) and math.isfinite(stop) and entry > stop else "S"
+        parts.append(
+            ":".join(
+                [
+                    str(getattr(r, "symbol", "")),
+                    str(getattr(r, "regime", "")),
+                    str(getattr(r, "playbook", "")),
+                    direction,
+                    q(getattr(r, "suggested_entry", float("nan"))),
+                    q(getattr(r, "suggested_structural_stop", float("nan"))),
+                    q(getattr(r, "suggested_tp1", float("nan"))),
+                    str(int(getattr(r, "quality_score", 0) or 0) // 5),
+                    str(int(getattr(r, "pressure_edge", 0) or 0) // 3),
+                ]
+            )
+        )
+    return "|".join(parts)
+
+
+def _intraday_candidate_key(report: Any) -> str:
+    """Setup-aware identity for per-candidate duplicate suppression.
+
+    The old key used only symbol/playbook/direction, so a genuinely new intraday
+    setup with changed Entry/Stop levels could be hidden for the whole cooldown.
+    Quantized structural levels now keep small scan-to-scan drift suppressed while
+    allowing a materially rebuilt setup through.
+    """
+    direction_text = f"{getattr(report, 'allowed_direction', '')} {getattr(report, 'archive_reason', '')}".upper()
+    if "LONG" in direction_text:
+        direction = "LONG"
+    elif "SHORT" in direction_text:
+        direction = "SHORT"
+    else:
+        entry = float(getattr(report, "suggested_entry", float("nan")))
+        stop = float(getattr(report, "suggested_structural_stop", float("nan")))
+        direction = "LONG" if math.isfinite(entry) and math.isfinite(stop) and entry > stop else "SHORT"
+
+    price = abs(float(getattr(report, "price", 0.0) or 0.0))
+    atr15 = abs(float(getattr(report, "atr15", 0.0) or 0.0))
+    price_tick = abs(float(getattr(report, "price_tick", 0.0) or 0.0))
+    step = max(price * 0.0005, atr15 * 0.50, price_tick * 4.0, 1e-12)
+
+    def q(value: Any) -> str:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return "nan"
+        if not math.isfinite(number):
+            return "nan"
+        return str(int(round(number / step)))
+
+    return ":".join([
+        str(getattr(report, "symbol", "")),
+        str(getattr(report, "regime", "")),
+        str(getattr(report, "playbook", "")),
+        direction,
+        q(getattr(report, "suggested_entry", float("nan"))),
+        q(getattr(report, "suggested_structural_stop", float("nan"))),
+    ])
+
+
+def _intraday_price_tick_map(exchange_info: dict[str, Any] | None) -> dict[str, float]:
+    """Extract exact futures price ticks for manual Entry/SL/TP rounding."""
+    ticks: dict[str, float] = {}
+    if not isinstance(exchange_info, dict):
+        return ticks
+    for item in exchange_info.get("symbols") or []:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("requestedSymbol") or item.get("symbol") or "").upper().strip()
+        raw_tick = item.get("priceUnit")
+        try:
+            tick = float(raw_tick)
+        except (TypeError, ValueError):
+            try:
+                scale = int(item.get("priceScale"))
+                tick = 10.0 ** (-scale)
+            except (TypeError, ValueError):
+                continue
+        if symbol and math.isfinite(tick) and tick > 0:
+            ticks[symbol] = tick
+    return ticks
+
+
 class BotRuntime:
     def __init__(self, settings: Settings, logger: logging.Logger):
         self.settings = settings
@@ -99,6 +213,7 @@ class BotRuntime:
         self.intraday_last_status_text: str | None = None
         self.intraday_last_signature: str | None = None
         self.intraday_last_archive_sent_at: float = 0.0
+        self.intraday_candidate_sent_at: dict[str, float] = {}
         self.intraday_symbols: list[str] = list(INTRADAY_DEFAULT_SYMBOLS)
         self.intraday_regime_state: dict[str, dict[str, Any]] = {}
 
@@ -142,6 +257,7 @@ class BotRuntime:
         self.intraday_last_status_text = None
         self.intraday_last_signature = None
         self.intraday_last_archive_sent_at = 0.0
+        self.intraday_candidate_sent_at.clear()
         self.intraday_symbols = list(INTRADAY_DEFAULT_SYMBOLS)
         self.intraday_regime_state.clear()
         self.awaiting_api_step.clear()
@@ -494,6 +610,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             runtime.intraday_symbols = symbols
             runtime.intraday_last_signature = None
             runtime.intraday_last_archive_sent_at = 0.0
+            runtime.intraday_candidate_sent_at.clear()
             runtime.intraday_regime_state.clear()
             runtime.logger.info("Intraday symbols command action=%s symbols=%s", action, symbols)
             if action == "reset":
@@ -1178,6 +1295,17 @@ async def toggle_intraday(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if runtime.intraday_enabled:
         runtime.logger.info("Intraday toggle OFF chat_id=%s", chat_id)
         runtime.intraday_enabled = False
+        task = runtime.intraday_task
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        runtime.intraday_task = None
+        runtime.intraday_busy = False
+        runtime.intraday_regime_state.clear()
+        runtime.intraday_candidate_sent_at.clear()
         await _replace_intraday_status(
             context,
             chat_id,
@@ -1190,11 +1318,13 @@ async def toggle_intraday(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     runtime.intraday_enabled = True
     runtime.intraday_last_signature = None
     runtime.intraday_last_archive_sent_at = 0.0
+    runtime.intraday_candidate_sent_at.clear()
+    runtime.intraday_regime_state.clear()
     await _replace_intraday_status(
         context,
         chat_id,
         runtime,
-        f"📊 Intraday: ON\n\nСканирую {_symbols_short_list(runtime.intraday_symbols)} каждые 5 минут. Данные: свежая загрузка {runtime.settings.intraday_days_back}d без parquet/cache. Прогресс короткий: 10%/20%/90%/100%, после скана он удаляется. Финальный статус и архив идут ниже.",
+        f"📊 Intraday: ON\n\nСканирую {_symbols_short_list(runtime.intraday_symbols)} так: полный скан → таймер 5:00 → следующий полный скан. Данные: свежая загрузка {runtime.settings.intraday_days_back}d без parquet/cache. Циклы не накладываются. Финальный статус и архив идут ниже.",
     )
     if not runtime.intraday_task or runtime.intraday_task.done():
         runtime.intraday_task = asyncio.create_task(intraday_loop(context, chat_id))
@@ -1220,13 +1350,21 @@ async def intraday_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> Non
                 runtime.intraday_busy = True
                 base = await intraday_cycle(context, chat_id, runtime)
                 runtime.intraday_busy = False
-                await _intraday_countdown(context, chat_id, runtime, base, runtime.settings.intraday_scan_interval_sec)
+                # User-defined Intraday cadence: finish the full scan first, then
+                # start a fresh 5:00 countdown. Do not align to wall-clock 00/05/10
+                # boundaries and never overlap cycles.
+                interval = max(60, int(runtime.settings.intraday_scan_interval_sec))
+                await _intraday_countdown(context, chat_id, runtime, base, interval)
             except Exception as exc:  # noqa: BLE001
                 runtime.logger.exception("Intraday cycle failed: %s", exc)
                 runtime.intraday_busy = False
-                base = f"⚠️ Intraday error: {exc}\n\nПовтор будет через 5 минут, если Intraday ON. Подробности в /log_full."
+                base = f"⚠️ Intraday error: {exc}\n\nПосле ошибки запускаю обычный таймер 5:00, затем новый полный скан, если Intraday ON. Подробности в /log_full."
                 await _replace_intraday_status(context, chat_id, runtime, base)
-                await _intraday_countdown(context, chat_id, runtime, base, runtime.settings.intraday_scan_interval_sec)
+                # User-defined Intraday cadence: finish the full scan first, then
+                # start a fresh 5:00 countdown. Do not align to wall-clock 00/05/10
+                # boundaries and never overlap cycles.
+                interval = max(60, int(runtime.settings.intraday_scan_interval_sec))
+                await _intraday_countdown(context, chat_id, runtime, base, interval)
     except asyncio.CancelledError:
         runtime.logger.warning("Intraday loop cancelled")
     finally:
@@ -1264,7 +1402,13 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
     data_by_symbol: dict[str, dict[str, Any]] = {}
     done: list[str] = []
     total_symbols = max(1, len(symbols))
+    price_ticks: dict[str, float] = {}
     try:
+        try:
+            price_ticks = _intraday_price_tick_map(await client.exchange_info(symbols))
+            runtime.logger.info("Intraday price ticks loaded: %s", price_ticks)
+        except Exception as exc:  # noqa: BLE001
+            runtime.logger.warning("Intraday price tick lookup failed; raw prices will be used: %s", exc)
         server_time = await client.server_time()
         interval_ms = INTERVAL_MS.get(runtime.settings.base_interval, 60_000)
         window = DownloadWindow.last_days_from_end_ms(runtime.settings.intraday_days_back, int(server_time["serverTime"]), interval_ms)
@@ -1346,12 +1490,19 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
                 )
 
             try:
+                symbol_server_time = await client.server_time()
+                symbol_window = DownloadWindow.last_days_from_end_ms(
+                    runtime.settings.intraday_days_back,
+                    int(symbol_server_time["serverTime"]),
+                    interval_ms,
+                )
                 df = await client.download_klines_dataframe(
                     symbol,
                     runtime.settings.base_interval,
-                    window,
+                    symbol_window,
                     progress_every_requests=3,
                     progress_cb=symbol_progress,
+                    fail_on_empty_chunk=True,
                 )
                 runtime.logger.info("Intraday symbol downloaded symbol=%s rows=%s", symbol, len(df))
                 analyze_pct = min(87, max(start_pct, end_pct - 2))
@@ -1374,7 +1525,13 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
                         elapsed_sec=time.perf_counter() - cycle_started,
                     ),
                 )
-                report, df_1m, frames = analyze_intraday_symbol(symbol, df)
+                analysis_server_time = await client.server_time()
+                report, df_1m, frames = analyze_intraday_symbol(
+                    symbol,
+                    df,
+                    expected_latest_ts=pd.to_datetime(int(analysis_server_time["serverTime"]), unit="ms", utc=True),
+                    price_tick=price_ticks.get(symbol),
+                )
                 raw_regime = report.regime
                 raw_decision = report.decision
                 report = _apply_intraday_hysteresis(runtime, report)
@@ -1445,35 +1602,65 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
     green = [r for r in reports if r.is_green]
     archive_name: str | None = None
     zip_path: Path | None = None
+    pending_green_signature: str | None = None
+    pending_green_keys: list[str] = []
 
     if green:
         runtime.logger.info("Intraday green candidates found count=%s symbols=%s", len(green), [r.symbol for r in green])
-        green_signature = "|".join(sorted(f"{r.symbol}:{r.regime}:{r.playbook}:{r.allowed_direction}" for r in green))
-        same_green = runtime.intraday_last_signature == green_signature
-        duplicate_cooldown_left = INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC - (time.time() - runtime.intraday_last_archive_sent_at)
-        if same_green and duplicate_cooldown_left > 0:
-            archive_name = f"дубль не отправлен: те же зелёные кандидаты, cooldown ещё {int(duplicate_cooldown_left // 60) + 1} мин"
+        now = time.time()
+        send_green: list[Any] = []
+        suppressed: list[tuple[Any, int]] = []
+        # Setup-aware keys can change as structure changes; prune old entries so the
+        # runtime dictionary cannot grow forever during long-lived Intraday sessions.
+        stale_before = now - max(6 * 60 * 60, INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC * 8)
+        for stale_key, stale_ts in list(runtime.intraday_candidate_sent_at.items()):
+            if stale_ts < stale_before:
+                runtime.intraday_candidate_sent_at.pop(stale_key, None)
+        for report in green:
+            key = _intraday_candidate_key(report)
+            sent_at = runtime.intraday_candidate_sent_at.get(key, 0.0)
+            cooldown_left = INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC - (now - sent_at)
+            if cooldown_left > 0:
+                suppressed.append((report, int(cooldown_left // 60) + 1))
+            else:
+                send_green.append(report)
+
+        if not send_green:
+            left = max((mins for _, mins in suppressed), default=1)
+            archive_name = f"повтор того же сетапа не отправлен: cooldown ещё до {left} мин"
             runtime.logger.info(
-                "Intraday duplicate archive suppressed signature=%s cooldown_left=%.1fs",
-                green_signature,
-                duplicate_cooldown_left,
+                "Intraday per-candidate duplicates suppressed keys=%s",
+                [_intraday_candidate_key(r) for r, _ in suppressed],
             )
         else:
-            await _edit_intraday_status(context, chat_id, runtime, _intraday_candidates_progress_text(green))
-            await asyncio.sleep(0.5)
-            await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(1, 3))
-            zip_path = await asyncio.to_thread(build_intraday_candidates_archive, runtime.settings, runtime.logger, green, data_by_symbol)
-            if zip_path is not None:
-                await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(2, 3))
-                runtime.last_export = zip_path
-                archive_name = zip_path.name
-                runtime.intraday_last_signature = green_signature
-                runtime.intraday_last_archive_sent_at = time.time()
-                await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(3, 3, ok=True))
-                await asyncio.sleep(0.5)
+            green_signature = _intraday_candidate_signature(send_green)
+            same_green = runtime.intraday_last_signature == green_signature
+            duplicate_cooldown_left = INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC - (time.time() - runtime.intraday_last_archive_sent_at)
+            if same_green and duplicate_cooldown_left > 0:
+                archive_name = f"дубль не отправлен: те же зелёные кандидаты, cooldown ещё {int(duplicate_cooldown_left // 60) + 1} мин"
+                runtime.logger.info(
+                    "Intraday duplicate archive suppressed signature=%s cooldown_left=%.1fs",
+                    green_signature,
+                    duplicate_cooldown_left,
+                )
             else:
-                archive_name = "ошибка: зелёные есть, но архив не собран — см /log_full"
-                runtime.logger.error("Intraday green candidates found, but archive builder returned None symbols=%s", [r.symbol for r in green])
+                await _edit_intraday_status(context, chat_id, runtime, _intraday_candidates_progress_text(send_green))
+                await asyncio.sleep(0.5)
+                await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(1, 3))
+                zip_path, included_green = await asyncio.to_thread(
+                    build_intraday_candidates_archive, runtime.settings, runtime.logger, send_green, data_by_symbol
+                )
+                if zip_path is not None:
+                    await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(2, 3))
+                    runtime.last_export = zip_path
+                    archive_name = zip_path.name
+                    pending_green_signature = _intraday_candidate_signature(included_green)
+                    pending_green_keys = [_intraday_candidate_key(r) for r in included_green]
+                    await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(3, 3, ok=True))
+                    await asyncio.sleep(0.5)
+                else:
+                    archive_name = "ошибка: зелёные есть, но архив не собран — см /log_full"
+                    runtime.logger.error("Intraday green candidates found, but archive builder returned None symbols=%s", [r.symbol for r in send_green])
     else:
         runtime.logger.info("Intraday cycle no green candidates")
         await _edit_intraday_status(
@@ -1495,7 +1682,19 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
     base = _intraday_status_text(reports, finished_msk, symbols, archive_name)
     await _replace_intraday_status(context, chat_id, runtime, base)
     if zip_path is not None:
-        await send_intraday_archive_only(context, chat_id, zip_path, runtime)
+        try:
+            await send_intraday_archive_only(context, chat_id, zip_path, runtime)
+        except Exception as exc:  # noqa: BLE001
+            runtime.logger.exception("Intraday archive Telegram send failed; duplicate state NOT committed file=%s: %s", zip_path.name, exc)
+            failed_base = base + "\n\n⚠️ Архив собран, но Telegram-отправка не удалась. Следующий скан повторит отправку, cooldown не установлен."
+            await _replace_intraday_status(context, chat_id, runtime, failed_base)
+            return failed_base
+        if pending_green_signature is not None:
+            committed_at = time.time()
+            runtime.intraday_last_signature = pending_green_signature
+            runtime.intraday_last_archive_sent_at = committed_at
+            for key in pending_green_keys:
+                runtime.intraday_candidate_sent_at[key] = committed_at
     runtime.logger.info(
         "Intraday cycle finished chat_id=%s elapsed_sec=%.2f green=%s archive=%s",
         chat_id,
