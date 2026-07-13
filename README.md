@@ -1,4 +1,4 @@
-# ChatGPT Scan Bot 30d — 55_full
+# ChatGPT Scan Bot 30d — 58_full
 
 Telegram bot for manual / semi-automatic trading analysis with ChatGPT.
 
@@ -357,7 +357,7 @@ INTRADAY_DAYS_BACK=30
 - Stale duplicate keys are pruned from runtime memory.
 - Sweep diagnostics use the actual reversal trap limit.
 - Trend stop lookback documentation is synchronized with code: 20 closed 15m candles = 5 hours.
-- `/ping` must report `55_full`.
+- Historical 55_full release expected `/ping` = `55_full`; current release is listed below.
 
 
 ## Intraday 55_full
@@ -366,3 +366,34 @@ INTRADAY_DAYS_BACK=30
 - LIMIT на 0.15 ATR15 глубже VWAP; стоп за 5 часами закрытой 15m структуры (20 свечей), минимум 2.30/2.40 ATR15, максимум 4.00 ATR15.
 - TP: 0.80R / 1.60R / 2.40R.
 - Частота повышается входом и профилем, а не микростопом.
+
+
+## 56_full Intraday stale-LIMIT safety fix
+- Only Intraday engine, Intraday archive task, Intraday pending-LIMIT monitoring, version, and documentation changed. Other modes and their tasks are unchanged.
+- Trend local-room floor is raised minimally from 0.10R to 0.12R. It is intentionally not raised to TP1's 0.80R, so frequency is not strangled. Sweep/Range room gates remain unchanged.
+- A plan is rejected before publication if price has already travelled 0.60R from the proposed LIMIT toward TP1.
+- After archive delivery, pending LIMIT ideas are monitored across scans and persisted in `state/intraday_pending_limits.json`.
+- Before fill, the bot tells the user to remove an old LIMIT if price travels 0.60R toward TP1, the next scan becomes WAIT/TRANSITION/opposite, or Entry/Stop materially rebuild.
+- If the scenario remains valid, the LIMIT gets one complete 15m candle after publication (15–30 minutes), then expires. This avoids both 90-minute stale fills and a frequency-killing 1-minute TTL.
+- Stops remain structural: Trend minimum 2.30 ATR15 for crypto/alts or 2.40 ATR15 for metals/energy; maximum 4.00 ATR15. TP remains 0.80R / 1.60R / 2.40R.
+- `/ping` must report `56_full`.
+
+## 57_full Intraday custom-symbol candle fix
+- Only the Intraday candle downloader, Intraday task header/rule, version, and documentation changed. Trading logic, stops, targets, frequency thresholds, other modes, and their tasks are unchanged.
+- `int gram`, `int pol`, `int dogs`, and other exact MEXC Futures symbols are not restricted by a fixed whitelist.
+- Intraday downloads newest candles first instead of assuming that the contract existed at the beginning of the full 30-day window. This fixes valid newer/renamed contracts being marked `NO_DATA` because an old leading MEXC page was empty.
+- If newest-first paging is unavailable or stale, Intraday performs a second tolerant exact-symbol forward pass. It never substitutes another coin or a similarly named contract.
+- Missing or stale recent candles still create `DATA_WARNING`/WAIT; the fix does not convert broken data into a green setup.
+- `/ping` must report `57_full`.
+
+
+## 58_full Intraday full code audit
+- Only Intraday runtime/state handling, Intraday plan validation, Intraday archive task/deadline, application version, and documentation changed. Other modes and their task prompts are unchanged.
+- Persisted pending LIMITs now restore their setup cooldown after restart/ON, so the same archive cannot be resent and silently receive a new lifetime.
+- A pending LIMIT is cancelled on `NO_DATA` or a missing completed-scan report; an old plan is never left active when fresh candles cannot confirm it.
+- Invalid/non-finite/tick-collapsed Entry/Stop/TP geometry is forced to `WAIT_CONFIRMATION` before a green archive can be built.
+- `int ...` now stops any active old-symbol Intraday cycle before replacing the list and immediately restarts on the new symbols. One-character exact MEXC symbols are accepted too.
+- The archive task and runtime pending monitor use one shared expiry timestamp, including correct exact-15m-boundary handling.
+- Trading thresholds are unchanged: Trend local room remains `0.12R`; structural stops remain 2.30/2.40 ATR minimum and 4.00 ATR maximum; targets remain 0.80/1.60/2.40R.
+- Parquet equivalence audit: 288 checkpoints across BTC/BCH/ETH/XAU/SILVER/USOIL produced zero decision/Entry/Stop/TP differences versus 57_full.
+- `/ping` must report `58_full`.

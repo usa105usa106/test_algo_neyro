@@ -1,4 +1,4 @@
-# Coolify deploy — ChatGPT Scan Bot 30d 55_full
+# Coolify deploy — ChatGPT Scan Bot 30d 58_full
 
 ## Required env
 
@@ -19,7 +19,7 @@ SECRET_ENCRYPTION_KEY=
 2. Open Telegram.
 3. Send `/start`.
 4. The latest message will contain the current button panel at the bottom of the chat.
-5. Press `/ping`; expected version: `55_full`.
+5. Press `/ping`; expected version: `58_full`.
 6. Press a scan button, for example `📊 Gold 30d`, or send a text symbol like `xrp` for a custom exact-symbol archive.
 
 ## Output
@@ -198,4 +198,26 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 ## 55_full deploy note
 - Intraday-only change: setup-aware 45-minute duplicate cooldown, stale-key pruning, corrected Sweep reversal diagnostic, and synchronized 5-hour Trend lookback text.
 - Trading thresholds and all non-Intraday modes/tasks are unchanged.
-- `/ping` must report `55_full`.
+- Historical 55_full release expected `/ping` = `55_full`; do not use this value for the current deploy.
+
+
+## 56_full deploy note
+- No new environment variables are required.
+- Intraday-only update: modest 0.12R Trend local-room floor, 0.60R missed-move cancellation, one-full-15m LIMIT validity, and persisted pending-LIMIT invalidation notices.
+- Other scan modes and all non-Intraday task prompts are unchanged.
+- `/ping` must report `56_full`.
+
+## 57_full deploy note
+- No new environment variables are required.
+- Intraday-only data fix: custom `int ...` symbols use newest-first exact MEXC Futures paging and a tolerant exact-symbol fallback, so empty old pre-listing chunks no longer abort the current scan.
+- No symbol substitution is used. Recent candle gaps remain WAIT/DATA_WARNING.
+- Trading filters, stops, targets, stale-LIMIT rules, all other modes, and all non-Intraday tasks are unchanged.
+- `/ping` must report `57_full`.
+
+
+## 58_full deploy note
+- No new environment variables are required.
+- Intraday-only audit fix: restore pending-order duplicate state after restart, cancel pending LIMITs on NO_DATA/missing reports, reject invalid rounded plan geometry, and safely restart an active scan when `int ...` changes symbols.
+- Archive task and runtime cancellation monitor now share the same fixed expiry timestamp.
+- Trading filters, local-room threshold, structural stops, targets, all other modes, and all non-Intraday tasks are unchanged.
+- `/ping` must report `58_full`.

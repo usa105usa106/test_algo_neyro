@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 
-# 55_full: direction-agnostic Intraday logic with setup-aware duplicate handling. Every supported asset may produce
+# 58_full: audited short-lived Intraday LIMIT plans with conservative room/missed-move protection. Every supported asset may produce
 # LONG or SHORT from current candle structure; no permanent asset/direction
 # blacklist is allowed. Structural stops and strict Sweep/Range gates remain.
 MIN_INTRADAY_GREEN_QUALITY = 58
@@ -21,7 +21,8 @@ MAX_REVERSAL_LATE_RISK = 20
 MIN_TREND_EFFICIENCY_15M = 0.05
 MIN_DIRECTIONAL_MOVE_ATR_15M = -0.80
 MAX_DIRECTION_SCORE_GAP = 90
-MIN_LOCAL_ROOM_R = 0.10
+MIN_LOCAL_ROOM_R = 0.12
+MAX_PREFILL_PROGRESS_R = 0.60
 MEXC_CONSERVATIVE_ENTRY_EXIT_RATE = 0.0014
 MAX_ESTIMATED_FEE_DRAG_R = 1.10
 MAX_REVERSAL_FEE_DRAG_R = 0.60
@@ -49,6 +50,38 @@ def _safe_pct(a: float, b: float) -> float:
     if not np.isfinite(a) or not np.isfinite(b) or b == 0:
         return 0.0
     return float((a - b) / b * 100.0)
+
+
+def _plan_geometry_error(direction: str, plan: dict[str, Any]) -> str | None:
+    """Reject non-finite, zero-risk or tick-collapsed plans before they turn green."""
+    names = ("entry", "stop", "tp1", "tp2", "tp3")
+    values: dict[str, float] = {}
+    for name in names:
+        try:
+            value = float(plan.get(name, float("nan")))
+        except (TypeError, ValueError):
+            return f"{name} is not numeric"
+        if not np.isfinite(value) or value <= 0:
+            return f"{name} is invalid"
+        values[name] = value
+
+    entry = values["entry"]
+    stop = values["stop"]
+    tp1 = values["tp1"]
+    tp2 = values["tp2"]
+    tp3 = values["tp3"]
+    risk = abs(entry - stop)
+    if not np.isfinite(risk) or risk <= 0:
+        return "Entry and Stop collapse to zero risk"
+    if direction == "long":
+        if not (stop < entry < tp1 < tp2 < tp3):
+            return "LONG prices are not ordered Stop < Entry < TP1 < TP2 < TP3"
+    elif direction == "short":
+        if not (stop > entry > tp1 > tp2 > tp3):
+            return "SHORT prices are not ordered Stop > Entry > TP1 > TP2 > TP3"
+    else:
+        return "trade direction is missing"
+    return None
 
 
 def _norm_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -531,8 +564,9 @@ def _max_structural_risk_atr(symbol: str, playbook: str = "Trend Pullback") -> f
 
 
 def _trend_min_local_room_r(symbol: str) -> float:
-    # A 0.10R nearest-structure floor preserves intraday frequency. Entry is
-    # shifted deeper and the stop stays structural, so this is not a micro-stop.
+    # Keep the room filter modest so Intraday frequency is not strangled. 0.12R
+    # is only a near-obstacle safety floor; it is deliberately not raised to TP1's
+    # full 0.80R distance. Structural stop and fee gates remain unchanged.
     return MIN_LOCAL_ROOM_R
 
 
@@ -687,6 +721,7 @@ class IntradayReport:
     suggested_tp3: float = float("nan")
     suggested_risk_atr: float = float("nan")
     suggested_local_room_r: float = float("nan")
+    suggested_prefill_progress_r: float = float("nan")
     estimated_fee_drag_r: float = float("nan")
     plan_warning: str | None = None
     price_tick: float = float("nan")
@@ -723,7 +758,7 @@ class IntradayReport:
             f"Давление: buyers {self.buyer_pressure} / sellers {self.seller_pressure}\n"
             f"Риск: trap {self.trap_risk} / late {self.late_risk}\n"
             f"Edge/efficiency: pressure +{self.pressure_edge} / 15m eff {self.trend_efficiency_15m:.2f} / move {self.directional_move_atr_15m:.2f} ATR\n"
-            f"Plan audit: entry {_fmt(self.suggested_entry)} / stop {_fmt(self.suggested_structural_stop)} / stop {self.suggested_stop_pct:.3f}% / risk {self.suggested_risk_atr:.2f} ATR / local room {self.suggested_local_room_r:.2f}R / tick {_fmt(self.price_tick)}\n"
+            f"Plan audit: entry {_fmt(self.suggested_entry)} / stop {_fmt(self.suggested_structural_stop)} / stop {self.suggested_stop_pct:.3f}% / risk {self.suggested_risk_atr:.2f} ATR / local room {self.suggested_local_room_r:.2f}R / prefill progress {self.suggested_prefill_progress_r:.2f}R / tick {_fmt(self.price_tick)}\n"
             f"Fee audit: conservative LIMIT-entry + protective-exit drag {self.estimated_fee_drag_r:.2f}R\n"
             f"Rank score: {self.quality_score}\n"
             f"Сценарий: {self.playbook}\n"
@@ -1271,11 +1306,23 @@ def analyze_intraday_symbol(
     }
 
     plan_risk = abs(float(suggested_plan["entry"]) - float(suggested_plan["stop"]))
+    if active_direction == "long" and np.isfinite(plan_risk) and plan_risk > 0:
+        prefill_progress_r = (price - float(suggested_plan["entry"])) / plan_risk
+    elif active_direction == "short" and np.isfinite(plan_risk) and plan_risk > 0:
+        prefill_progress_r = (float(suggested_plan["entry"]) - price) / plan_risk
+    else:
+        prefill_progress_r = float("nan")
     estimated_fee_drag_r = (
         MEXC_CONSERVATIVE_ENTRY_EXIT_RATE * abs(float(suggested_plan["entry"])) / plan_risk
         if active_direction and np.isfinite(plan_risk) and plan_risk > 0
         else float("nan")
     )
+
+    plan_geometry_error = _plan_geometry_error(active_direction, suggested_plan) if active_direction else "trade direction is missing"
+    if decision == "MANUAL_REVIEW" and plan_geometry_error:
+        decision = "WAIT_CONFIRMATION"
+        archive_reason = None
+        comment = f"Некорректная геометрия Entry/Stop/TP после расчёта или округления: {plan_geometry_error}. Сделку не давать."
 
     if decision == "MANUAL_REVIEW" and str(suggested_plan.get("warning") or "").startswith("structural stop"):
         decision = "WAIT_CONFIRMATION"
@@ -1301,6 +1348,14 @@ def analyze_intraday_symbol(
                     f"План слишком мелкий относительно комиссий MEXC: расчётный drag {estimated_fee_drag_r:.2f}R "
                     f"> {fee_limit_r:.2f}R. Сделку не давать."
                 )
+
+    if decision == "MANUAL_REVIEW" and np.isfinite(prefill_progress_r) and prefill_progress_r >= MAX_PREFILL_PROGRESS_R:
+        decision = "WAIT_CONFIRMATION"
+        archive_reason = None
+        comment = (
+            f"Цена уже прошла {prefill_progress_r:.2f}R от LIMIT к TP1 до публикации плана "
+            f"(лимит {MAX_PREFILL_PROGRESS_R:.2f}R). Движение пропущено; старый уровень не догонять, ждать свежий сетап."
+        )
 
     if decision == "MANUAL_REVIEW":
         if active_direction == "long":
@@ -1388,6 +1443,7 @@ def analyze_intraday_symbol(
         suggested_tp3=float(suggested_plan["tp3"]),
         suggested_risk_atr=float(suggested_plan["risk_atr"]),
         suggested_local_room_r=float(suggested_plan["local_room_r"]),
+        suggested_prefill_progress_r=float(prefill_progress_r),
         estimated_fee_drag_r=float(estimated_fee_drag_r),
         plan_warning=suggested_plan.get("warning"),
         price_tick=float(price_tick) if price_tick is not None and np.isfinite(price_tick) else float("nan"),

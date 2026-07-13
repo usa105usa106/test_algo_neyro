@@ -1,0 +1,16 @@
+{
+  "version": "58_full",
+  "compileall": "passed",
+  "unit_checks": "passed",
+  "async_symbol_change_race": "passed",
+  "archive_deadline_consistency": "passed",
+  "parquet_equivalence": {
+    "assets": ["BTC_USDT", "BCH_USDT", "ETH_USDT", "XAU_USDT", "SILVER_USDT", "USOIL_USDT"],
+    "checkpoints_per_asset": 48,
+    "total_checkpoints": 288,
+    "decision_or_plan_differences_vs_57_full": 0
+  },
+  "trading_thresholds_changed": false,
+  "other_modes_or_tasks_changed": false,
+  "live_mexc_request_performed_in_this_audit": false
+}

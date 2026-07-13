@@ -31,7 +31,7 @@ from archive_builder import build_aplus_hunter_archive, build_logs_archive, buil
 from intraday_archive import build_intraday_candidates_archive
 from intraday_engine import IntradayReport, analyze_intraday_symbol
 from config import SCAN_PRESETS, SYMBOL_CANDIDATES, ScanPreset, Settings, load_settings
-from file_utils import human_bytes, safe_rmtree, split_file
+from file_utils import human_bytes, read_json, safe_rmtree, split_file, write_json
 from logging_setup import setup_logging
 from mexc import DownloadWindow, INTERVAL_MS, MexcSpotClient
 from security import SecretStore
@@ -50,6 +50,8 @@ BTN_SCAN_PREFIX = "scan:"
 APLUS_SYMBOL_COOLDOWN_SEC = 45 * 60
 INTRADAY_DEFAULT_SYMBOLS = ["BTC_USDT", "ETH_USDT", "XAU_USDT", "SILVER_USDT", "USOIL_USDT"]
 INTRADAY_DUPLICATE_ARCHIVE_COOLDOWN_SEC = 45 * 60
+INTRADAY_MISSED_MOVE_R = 0.60
+INTRADAY_PENDING_STATE_FILE = "intraday_pending_limits.json"
 
 
 _INTRADAY_DECISION_ORDER = {
@@ -189,6 +191,227 @@ def _intraday_price_tick_map(exchange_info: dict[str, Any] | None) -> dict[str, 
     return ticks
 
 
+def _intraday_direction(report: Any) -> str:
+    direction_text = f"{getattr(report, 'allowed_direction', '')} {getattr(report, 'archive_reason', '')}".upper()
+    if "LONG" in direction_text:
+        return "LONG"
+    if "SHORT" in direction_text:
+        return "SHORT"
+    entry = float(getattr(report, "suggested_entry", float("nan")))
+    stop = float(getattr(report, "suggested_structural_stop", float("nan")))
+    return "LONG" if math.isfinite(entry) and math.isfinite(stop) and entry > stop else "SHORT"
+
+
+def _intraday_pending_state_path(settings: Settings) -> Path:
+    return settings.state_dir / INTRADAY_PENDING_STATE_FILE
+
+
+def _load_intraday_pending_limits(settings: Settings, logger: logging.Logger) -> dict[str, dict[str, Any]]:
+    path = _intraday_pending_state_path(settings)
+    if not path.exists():
+        return {}
+    try:
+        raw = read_json(path)
+        items = raw.get("pending") if isinstance(raw, dict) else None
+        if not isinstance(items, dict):
+            return {}
+        clean: dict[str, dict[str, Any]] = {}
+        for symbol, item in items.items():
+            if not isinstance(item, dict):
+                continue
+            required = {"symbol", "direction", "entry", "stop", "tp1", "sent_at", "expires_at", "candidate_key"}
+            if not required.issubset(item):
+                continue
+            clean[str(symbol)] = dict(item)
+        return clean
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not load Intraday pending LIMIT state %s: %s", path, exc)
+        return {}
+
+
+def _persist_intraday_pending_limits(runtime: Any) -> None:
+    path = _intraday_pending_state_path(runtime.settings)
+    try:
+        write_json(path, {"version": runtime.settings.app_version, "pending": runtime.intraday_pending_limits})
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.warning("Could not persist Intraday pending LIMIT state %s: %s", path, exc)
+
+
+def _clear_intraday_pending_limits(runtime: Any) -> list[str]:
+    symbols = sorted(runtime.intraday_pending_limits)
+    runtime.intraday_pending_limits.clear()
+    path = _intraday_pending_state_path(runtime.settings)
+    try:
+        if path.exists():
+            path.unlink()
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.warning("Could not remove Intraday pending LIMIT state %s: %s", path, exc)
+    return symbols
+
+
+def _restore_intraday_duplicate_state_from_pending(runtime: Any) -> None:
+    """Rebuild per-setup duplicate protection from persisted pending LIMITs.
+
+    Pending orders survive a process restart. Their archive cooldown must survive
+    too, otherwise the first scan can resend the same setup and extend its TTL.
+    """
+    for setup in runtime.intraday_pending_limits.values():
+        if not isinstance(setup, dict):
+            continue
+        key = str(setup.get("candidate_key", "")).strip()
+        try:
+            sent_at = float(setup.get("sent_at", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if key and math.isfinite(sent_at) and sent_at > 0:
+            runtime.intraday_candidate_sent_at[key] = max(
+                sent_at, runtime.intraday_candidate_sent_at.get(key, 0.0)
+            )
+
+
+def _one_full_15m_deadline_epoch(now_epoch: float) -> float:
+    now = datetime.fromtimestamp(now_epoch, tz=timezone.utc)
+    boundary = now.replace(second=0, microsecond=0)
+    boundary += timedelta(minutes=(-boundary.minute) % 15)
+    # At an exact 15m boundary the candle starting now is fully available to the
+    # user, so it is the one complete validity candle. One second later that
+    # candle is already partial and the next complete candle is used instead.
+    if now > boundary:
+        boundary += timedelta(minutes=15)
+    return (boundary + timedelta(minutes=15)).timestamp()
+
+
+def _pending_limit_from_report(report: Any, sent_at: float, expires_at: float | None = None) -> dict[str, Any]:
+    resolved_expiry = float(expires_at) if expires_at is not None else float(_one_full_15m_deadline_epoch(sent_at))
+    return {
+        "symbol": str(getattr(report, "symbol", "")),
+        "direction": _intraday_direction(report),
+        "playbook": str(getattr(report, "playbook", "")),
+        "entry": float(getattr(report, "suggested_entry", float("nan"))),
+        "stop": float(getattr(report, "suggested_structural_stop", float("nan"))),
+        "tp1": float(getattr(report, "suggested_tp1", float("nan"))),
+        "sent_at": float(sent_at),
+        "expires_at": resolved_expiry,
+        "candidate_key": _intraday_candidate_key(report),
+    }
+
+
+def _pending_limit_price_event(setup: dict[str, Any], df_1m: pd.DataFrame | None, now_epoch: float) -> tuple[str | None, pd.Timestamp | None]:
+    if df_1m is None or df_1m.empty:
+        return None, None
+    entry = float(setup.get("entry", float("nan")))
+    stop = float(setup.get("stop", float("nan")))
+    if not math.isfinite(entry) or not math.isfinite(stop):
+        return "invalid", None
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return "invalid", None
+    direction = str(setup.get("direction", ""))
+    sent_at = pd.Timestamp(datetime.fromtimestamp(float(setup.get("sent_at", 0.0)), tz=timezone.utc))
+    # Ignore the partial minute in which Telegram delivery happened; its high/low
+    # may contain price action from before the user could have placed the LIMIT.
+    first_full_minute = sent_at.ceil("min")
+    end = pd.Timestamp(datetime.fromtimestamp(now_epoch, tz=timezone.utc))
+    window = df_1m[(df_1m.index >= first_full_minute) & (df_1m.index < end)]
+    missed_level = entry + INTRADAY_MISSED_MOVE_R * risk if direction == "LONG" else entry - INTRADAY_MISSED_MOVE_R * risk
+    for ts, row in window.iterrows():
+        high = float(row["High"])
+        low = float(row["Low"])
+        if direction == "LONG":
+            if low <= entry:
+                return "filled", ts
+            if high >= missed_level:
+                return "missed", ts
+        else:
+            if high >= entry:
+                return "filled", ts
+            if low <= missed_level:
+                return "missed", ts
+    return None, None
+
+
+def _evaluate_intraday_pending_limits(
+    runtime: Any,
+    reports: list[Any],
+    data_by_symbol: dict[str, dict[str, Any]],
+    now_epoch: float,
+) -> list[tuple[str, str]]:
+    """Return pending-LIMIT cancellation notices; filled entries are cleared silently.
+
+    Cancellation candidates stay persisted until Telegram confirms the notice was
+    delivered. This makes a temporary send failure retry safely on the next scan.
+    """
+    if not runtime.intraday_pending_limits:
+        return []
+    current = {str(r.symbol): r for r in reports}
+    notices: list[tuple[str, str]] = []
+    filled_changed = False
+    for symbol, setup in list(runtime.intraday_pending_limits.items()):
+        event, event_ts = _pending_limit_price_event(setup, data_by_symbol.get(symbol, {}).get("df_1m"), now_epoch)
+        short = _symbol_short(symbol)
+        direction = str(setup.get("direction", ""))
+        entry = _format_intraday_price(float(setup.get("entry", float("nan"))))
+        if event == "filled":
+            runtime.logger.info("Intraday pending LIMIT entry touched symbol=%s direction=%s entry=%s at=%s", symbol, direction, entry, event_ts)
+            runtime.intraday_pending_limits.pop(symbol, None)
+            filled_changed = True
+            continue
+        if event == "missed":
+            notices.append((
+                symbol,
+                f"❌ {short}: если старая {direction} LIMIT {entry} выставлена — снять. Цена без входа прошла ≥{INTRADAY_MISSED_MOVE_R:.2f}R к TP1. Сетап пропущен; старый уровень повторно не использовать.",
+            ))
+            continue
+        if event == "invalid":
+            notices.append((symbol, f"❌ {short}: если старая {direction} LIMIT выставлена — снять: повреждён сохранённый Entry/Stop, план недействителен."))
+            continue
+
+        expires_at = float(setup.get("expires_at", 0.0) or 0.0)
+        if expires_at and now_epoch >= expires_at:
+            expiry_msk = datetime.fromtimestamp(expires_at, tz=timezone.utc) + timedelta(hours=3)
+            notices.append((
+                symbol,
+                f"❌ {short}: если старая {direction} LIMIT {entry} выставлена — снять: не исполнилась за одну полную 15m-свечу ({expiry_msk:%H:%M MSK}). Нужен новый сетап.",
+            ))
+            continue
+
+        report = current.get(symbol)
+        if report is None:
+            notices.append((
+                symbol,
+                f"❌ {short}: если старая {direction} LIMIT {entry} выставлена — снять. В новом Intraday scan нет отчёта по монете; прежний сценарий больше не подтверждён.",
+            ))
+            continue
+        if str(getattr(report, "regime", "")) == "NO_DATA":
+            notices.append((
+                symbol,
+                f"❌ {short}: если старая {direction} LIMIT {entry} выставлена — снять. Новый scan не получил пригодные свежие свечи ({report.regime} / {report.decision}); старый план без подтверждения не оставлять.",
+            ))
+            continue
+        current_direction = _intraday_direction(report) if getattr(report, "is_green", False) else ""
+        if not getattr(report, "is_green", False):
+            notices.append((
+                symbol,
+                f"❌ {short}: если старая {direction} LIMIT {entry} выставлена — снять. Новый scan: {report.regime} / {report.decision}, прежний сценарий больше не MANUAL_REVIEW.",
+            ))
+            continue
+        if current_direction != direction or str(getattr(report, "playbook", "")) != str(setup.get("playbook", "")):
+            notices.append((
+                symbol,
+                f"❌ {short}: если старая {direction} LIMIT {entry} выставлена — снять. Направление/сценарий изменились на {current_direction} {report.playbook}.",
+            ))
+            continue
+        if _intraday_candidate_key(report) != str(setup.get("candidate_key", "")):
+            notices.append((
+                symbol,
+                f"❌ {short}: если старая {direction} LIMIT {entry} выставлена — снять. Entry/Stop материально перестроились. Использовать только свежий архив.",
+            ))
+
+    if filled_changed:
+        _persist_intraday_pending_limits(runtime)
+    return notices
+
+
 class BotRuntime:
     def __init__(self, settings: Settings, logger: logging.Logger):
         self.settings = settings
@@ -214,6 +437,8 @@ class BotRuntime:
         self.intraday_last_signature: str | None = None
         self.intraday_last_archive_sent_at: float = 0.0
         self.intraday_candidate_sent_at: dict[str, float] = {}
+        self.intraday_pending_limits: dict[str, dict[str, Any]] = _load_intraday_pending_limits(settings, logger)
+        _restore_intraday_duplicate_state_from_pending(self)
         self.intraday_symbols: list[str] = list(INTRADAY_DEFAULT_SYMBOLS)
         self.intraday_regime_state: dict[str, dict[str, Any]] = {}
 
@@ -258,6 +483,7 @@ class BotRuntime:
         self.intraday_last_signature = None
         self.intraday_last_archive_sent_at = 0.0
         self.intraday_candidate_sent_at.clear()
+        _clear_intraday_pending_limits(self)
         self.intraday_symbols = list(INTRADAY_DEFAULT_SYMBOLS)
         self.intraday_regime_state.clear()
         self.awaiting_api_step.clear()
@@ -267,7 +493,7 @@ class BotRuntime:
 
 
 
-_CUSTOM_SYMBOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,24}$")
+_CUSTOM_SYMBOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,24}$")
 
 # User-friendly aliases for text-triggered scans. These are exact mappings, not fallbacks:
 # writing "gold" must mean the same exact tradable contract as the Gold button.
@@ -607,16 +833,47 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             if error:
                 await reply_with_menu(update, f"Intraday symbols: ошибка. {error}", runtime)
                 return
+
+            # Stop the old cycle before replacing its symbols. Without this, an
+            # already-running scan can finish later, send an archive for the old
+            # list and repopulate pending LIMIT state after `int ...` was applied.
+            restart_intraday = bool(runtime.intraday_enabled)
+            old_task = runtime.intraday_task
+            old_cycle_stopped = False
+            if restart_intraday and old_task and not old_task.done():
+                old_task.cancel()
+                try:
+                    await old_task
+                except asyncio.CancelledError:
+                    pass
+                old_cycle_stopped = True
+            if restart_intraday:
+                runtime.intraday_task = None
+                runtime.intraday_busy = False
+
+            cancelled_pending = _clear_intraday_pending_limits(runtime)
             runtime.intraday_symbols = symbols
             runtime.intraday_last_signature = None
             runtime.intraday_last_archive_sent_at = 0.0
             runtime.intraday_candidate_sent_at.clear()
             runtime.intraday_regime_state.clear()
-            runtime.logger.info("Intraday symbols command action=%s symbols=%s", action, symbols)
+            runtime.logger.info(
+                "Intraday symbols command action=%s symbols=%s cancelled_pending=%s old_cycle_stopped=%s",
+                action, symbols, cancelled_pending, old_cycle_stopped,
+            )
+            pending_note = (
+                f"\n⚠️ Снять старые неисполненные Intraday LIMIT: {_symbols_short_list(cancelled_pending)} — список изменён, мониторинг этих планов сброшен."
+                if cancelled_pending else ""
+            )
+            restart_note = "\n🔄 Текущий старый scan остановлен; новый цикл запущен уже по этому списку." if restart_intraday else ""
+
+            if restart_intraday:
+                runtime.intraday_task = asyncio.create_task(intraday_loop(context, update.effective_chat.id))
+
             if action == "reset":
-                await reply_with_menu(update, f"Intraday список сброшен по умолчанию: {_symbols_short_list(runtime.intraday_symbols)}", runtime)
+                await reply_with_menu(update, f"Intraday список сброшен по умолчанию: {_symbols_short_list(runtime.intraday_symbols)}{pending_note}{restart_note}", runtime)
             else:
-                await reply_with_menu(update, f"Intraday список заменён: {_symbols_short_list(runtime.intraday_symbols)}", runtime)
+                await reply_with_menu(update, f"Intraday список заменён: {_symbols_short_list(runtime.intraday_symbols)}{pending_note}{restart_note}", runtime)
             return
 
         preset = _custom_preset_from_text(text)
@@ -1306,11 +1563,16 @@ async def toggle_intraday(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         runtime.intraday_busy = False
         runtime.intraday_regime_state.clear()
         runtime.intraday_candidate_sent_at.clear()
+        cancelled_pending = _clear_intraday_pending_limits(runtime)
+        pending_note = (
+            f"\n\n⚠️ Снять неисполненные Intraday LIMIT: {_symbols_short_list(cancelled_pending)} — после OFF их сценарии больше не контролируются."
+            if cancelled_pending else ""
+        )
         await _replace_intraday_status(
             context,
             chat_id,
             runtime,
-            "🛑 Intraday: OFF\n\nНовые 5m-сканы остановлены. Старые режимы scan/montage/A+ Hunter не изменены.",
+            "🛑 Intraday: OFF\n\nНовые 5m-сканы остановлены. Старые режимы scan/montage/A+ Hunter не изменены." + pending_note,
         )
         return
 
@@ -1319,6 +1581,7 @@ async def toggle_intraday(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     runtime.intraday_last_signature = None
     runtime.intraday_last_archive_sent_at = 0.0
     runtime.intraday_candidate_sent_at.clear()
+    _restore_intraday_duplicate_state_from_pending(runtime)
     runtime.intraday_regime_state.clear()
     await _replace_intraday_status(
         context,
@@ -1496,15 +1759,23 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
                     int(symbol_server_time["serverTime"]),
                     interval_ms,
                 )
-                df = await client.download_klines_dataframe(
+                df = await client.download_intraday_klines_dataframe(
                     symbol,
                     runtime.settings.base_interval,
                     symbol_window,
                     progress_every_requests=3,
                     progress_cb=symbol_progress,
-                    fail_on_empty_chunk=True,
                 )
-                runtime.logger.info("Intraday symbol downloaded symbol=%s rows=%s", symbol, len(df))
+                first_open_ms = int(pd.to_numeric(df["open_time"], errors="coerce").min()) if not df.empty else None
+                last_open_ms = int(pd.to_numeric(df["open_time"], errors="coerce").max()) if not df.empty else None
+                runtime.logger.info(
+                    "Intraday symbol downloaded symbol=%s rows=%s strategy=%s first_open_ms=%s last_open_ms=%s",
+                    symbol,
+                    len(df),
+                    df.attrs.get("intraday_download_strategy", "unknown"),
+                    first_open_ms,
+                    last_open_ms,
+                )
                 analyze_pct = min(87, max(start_pct, end_pct - 2))
                 await _edit_intraday_status(
                     context,
@@ -1598,12 +1869,34 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
             elapsed_sec=time.perf_counter() - cycle_started,
         ),
     )
+    pending_cancel_notices = _evaluate_intraday_pending_limits(runtime, reports, data_by_symbol, time.time())
+    cancellation_state_changed = False
+    for cancel_symbol, cancel_text in pending_cancel_notices:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=cancel_text)
+            cancelled_setup = runtime.intraday_pending_limits.pop(cancel_symbol, None)
+            if isinstance(cancelled_setup, dict):
+                old_key = str(cancelled_setup.get("candidate_key", ""))
+                if old_key:
+                    runtime.intraday_candidate_sent_at.pop(old_key, None)
+            # An expired/cancelled plan must not be blocked by the old 45-minute
+            # archive signature if a fresh CLOSED-candle setup appears later.
+            runtime.intraday_last_signature = None
+            runtime.intraday_last_archive_sent_at = 0.0
+            cancellation_state_changed = True
+        except Exception as exc:  # noqa: BLE001
+            runtime.logger.warning("Intraday cancellation notice failed; will retry chat_id=%s symbol=%s text=%s error=%s", chat_id, cancel_symbol, cancel_text, exc)
+    if cancellation_state_changed:
+        _persist_intraday_pending_limits(runtime)
+
     reports.sort(key=_intraday_sort_key)
     green = [r for r in reports if r.is_green]
     archive_name: str | None = None
     zip_path: Path | None = None
     pending_green_signature: str | None = None
     pending_green_keys: list[str] = []
+    pending_green_reports: list[Any] = []
+    pending_green_expires_at: float | None = None
 
     if green:
         runtime.logger.info("Intraday green candidates found count=%s symbols=%s", len(green), [r.symbol for r in green])
@@ -1647,7 +1940,7 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
                 await _edit_intraday_status(context, chat_id, runtime, _intraday_candidates_progress_text(send_green))
                 await asyncio.sleep(0.5)
                 await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(1, 3))
-                zip_path, included_green = await asyncio.to_thread(
+                zip_path, included_green, archive_expires_at = await asyncio.to_thread(
                     build_intraday_candidates_archive, runtime.settings, runtime.logger, send_green, data_by_symbol
                 )
                 if zip_path is not None:
@@ -1656,6 +1949,8 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
                     archive_name = zip_path.name
                     pending_green_signature = _intraday_candidate_signature(included_green)
                     pending_green_keys = [_intraday_candidate_key(r) for r in included_green]
+                    pending_green_reports = list(included_green)
+                    pending_green_expires_at = archive_expires_at
                     await _edit_intraday_status(context, chat_id, runtime, _intraday_archive_progress_text(3, 3, ok=True))
                     await asyncio.sleep(0.5)
                 else:
@@ -1682,6 +1977,14 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
     base = _intraday_status_text(reports, finished_msk, symbols, archive_name)
     await _replace_intraday_status(context, chat_id, runtime, base)
     if zip_path is not None:
+        if pending_green_expires_at is not None and time.time() >= pending_green_expires_at:
+            runtime.logger.warning(
+                "Intraday archive expired before Telegram send; discarding file=%s expiry=%s",
+                zip_path.name, pending_green_expires_at,
+            )
+            expired_base = base + "\n\n⚠️ Архив устарел ещё до отправки и отброшен. Следующий scan пересоберёт свежий план; старую LIMIT не ставить."
+            await _replace_intraday_status(context, chat_id, runtime, expired_base)
+            return expired_base
         try:
             await send_intraday_archive_only(context, chat_id, zip_path, runtime)
         except Exception as exc:  # noqa: BLE001
@@ -1695,6 +1998,16 @@ async def intraday_cycle(context: ContextTypes.DEFAULT_TYPE, chat_id: int, runti
             runtime.intraday_last_archive_sent_at = committed_at
             for key in pending_green_keys:
                 runtime.intraday_candidate_sent_at[key] = committed_at
+            for report in pending_green_reports:
+                runtime.intraday_pending_limits[str(report.symbol)] = _pending_limit_from_report(
+                    report, committed_at, pending_green_expires_at
+                )
+            _persist_intraday_pending_limits(runtime)
+            runtime.logger.info(
+                "Intraday pending LIMIT state committed symbols=%s expires=%s",
+                [r.symbol for r in pending_green_reports],
+                {r.symbol: runtime.intraday_pending_limits[str(r.symbol)]["expires_at"] for r in pending_green_reports},
+            )
     runtime.logger.info(
         "Intraday cycle finished chat_id=%s elapsed_sec=%.2f green=%s archive=%s",
         chat_id,

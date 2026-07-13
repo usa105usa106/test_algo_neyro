@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-APP_VERSION = "55_full"
+APP_VERSION = "58_full"
 
 
 @dataclass(frozen=True)

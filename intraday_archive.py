@@ -33,21 +33,37 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _one_full_15m_deadline_msk(created_msk: str) -> str:
+    created = datetime.strptime(created_msk, "%Y-%m-%d %H:%M:%S")
+    boundary = created.replace(second=0, microsecond=0)
+    boundary += timedelta(minutes=(-boundary.minute) % 15)
+    if created > boundary:
+        boundary += timedelta(minutes=15)
+    # At an exact boundary the candle starting now is the complete validity candle;
+    # otherwise use the next complete candle. Validity remains 15–30 minutes.
+    valid_until = boundary + timedelta(minutes=15)
+    return valid_until.strftime("%Y-%m-%d %H:%M MSK")
+
+
 def _task_text(created_msk: str, candidates: list[IntradayReport]) -> str:
     symbols = ", ".join(r.symbol for r in candidates)
-    return f"""INTRADAY_TASK 55_full
+    valid_until = _one_full_15m_deadline_msk(created_msk)
+    return f"""INTRADAY_TASK 58_full
 Archive created: {created_msk} UTC+3/MSK
 Candidates: {symbols}
+LIMIT validity deadline after one full 15m candle: {valid_until}
 
 Use ONLY this archive. Choose maximum ONE setup.
 
 1. A candidate with report.decision=MANUAL_REVIEW is already confirmed by the deterministic engine on CLOSED candles. Do not demand another confirmation unless archive data directly contradicts the report.
-2. Return WAIT only for a concrete reason: stale/missing data, report/CSV contradiction, TP1 already touched before LIMIT fill, stop already invalidated, impossible prices, or the last CLOSED 15m candle explicitly reverses the setup.
-3. LIMIT only. Never MARKET.
-4. Use suggested_entry, suggested_structural_stop and suggested_tp1/2/3 exactly, rounded only to price_tick. Never tighten the stop.
-5. Every supported asset may produce LONG or SHORT. Choose direction only from the current CLOSED-candle regime, pressure, structure and confirmation in report.json. The 30d archive is context, not a permanent bull/bear bias; never apply a per-asset direction ban.
-6. Trend plan: LIMIT is 0.15 ATR15 deeper than VWAP; stop is beyond 5 hours of CLOSED 15m structure, minimum 2.30 ATR15 for crypto/alts or 2.40 ATR15 for XAU/USOIL, maximum 4.00 ATR15. Targets are 0.80R / 1.60R / 2.40R.
-7. At TP1 close 33%. Move the remainder to BE only after a CLOSED 15m candle beyond TP1 or after TP2. At TP2 close 33%; TP3 closes the remainder.
+2. Return WAIT only for a concrete reason: stale/missing data, report/CSV contradiction, price already moved 0.60R from LIMIT toward TP1 before the answer/order, TP1 already touched before LIMIT fill, stop already invalidated, impossible prices, or the last CLOSED 15m candle explicitly reverses the setup.
+3. LIMIT only. Never MARKET. The LIMIT gets one complete 15m candle after publication and is valid only until {valid_until} (15–30 minutes depending on archive time). If it has not filled by then, cancel it.
+4. Before fill, cancel immediately if price travels 0.60R or more from Entry toward TP1. That setup is MISSED; do not reuse the old Entry after a return.
+5. On a later Intraday scan, cancel the old pending LIMIT if the symbol is no longer MANUAL_REVIEW in the same direction/playbook, becomes WAIT/TRANSITION/NO_DATA, is missing from the completed scan, or a materially rebuilt Entry/Stop replaces it. A new order requires a fresh archive/setup.
+6. Use suggested_entry, suggested_structural_stop and suggested_tp1/2/3 exactly, rounded only to price_tick. Never tighten the stop.
+7. Any exact MEXC Futures symbol added with `int ...` may produce LONG or SHORT; there is no fixed Intraday whitelist. Choose direction only from the current CLOSED-candle regime, pressure, structure and confirmation in report.json. The 30d archive is context, not a permanent bull/bear bias; never apply a per-asset direction ban.
+8. Trend plan: LIMIT is 0.15 ATR15 deeper than VWAP; stop is beyond 5 hours of CLOSED 15m structure, minimum 2.30 ATR15 for crypto/alts or 2.40 ATR15 for XAU/USOIL, maximum 4.00 ATR15. Trend local-room safety floor is deliberately modest at 0.12R, not 0.80R, to avoid strangling frequency. Targets remain 0.80R / 1.60R / 2.40R.
+9. At TP1 close 33%. Move the remainder to BE only after a CLOSED 15m candle beyond TP1 or after TP2. At TP2 close 33%; TP3 closes the remainder.
 
 Format:
 **Intraday A** / **WAIT — observation only, no entry**
@@ -57,9 +73,11 @@ Stop: **...**
 TP1: **...** — 33%
 TP2: **...** — 33%
 TP3: **...** — remainder
-Cancel: ...
+Valid until: **{valid_until}**
+Cancel: no fill by deadline; before fill price moves >=0.60R toward TP1; later scan becomes WAIT/TRANSITION/NO_DATA/missing/opposite/rebuilt.
 Why: 1–3 short sentences.
 """.strip()
+
 
 
 def _report_text(reports: list[IntradayReport]) -> str:
@@ -83,14 +101,14 @@ def build_intraday_candidates_archive(
     logger: logging.Logger,
     candidates: list[IntradayReport],
     data_by_symbol: dict[str, dict[str, Any]],
-) -> tuple[Path | None, list[IntradayReport]]:
+) -> tuple[Path | None, list[IntradayReport], float | None]:
     if not candidates:
-        return None, []
+        return None, [], None
 
     candidates = sorted(candidates, key=lambda r: (-int(getattr(r, "quality_score", 0) or 0), str(getattr(r, "symbol", ""))))
 
     utc_build_stamp = utc_stamp()
-    created_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+    chart_created_msk = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
     build_dir = settings.work_dir / f"intraday_build_{utc_build_stamp}" / "intraday_candidates"
     safe_rmtree(build_dir)
     charts_out = build_dir / "charts"
@@ -114,7 +132,7 @@ def build_intraday_candidates_archive(
             if df_1m is None or df_1m.empty:
                 logger.warning("Intraday archive skip empty df for %s", symbol)
                 continue
-            rel = create_montage_for_symbol(symbol, df_1m, charts_out, created_msk, task_hint, logger)
+            rel = create_montage_for_symbol(symbol, df_1m, charts_out, chart_created_msk, task_hint, logger)
             chart_files.append(rel)
             write_json(reports_out / symbol / "report.json", _json_safe(report.as_dict()))
             (reports_out / symbol / "report.txt").write_text(report.details_text() + "\n", encoding="utf-8")
@@ -139,7 +157,7 @@ def build_intraday_candidates_archive(
 
     if not chart_files or not included_candidates:
         shutil.rmtree(build_dir.parent, ignore_errors=True)
-        return None, []
+        return None, [], None
     candidates = included_candidates
 
     # User-facing archive stamp is taken at the end of archive creation, right before manifest+zip.
@@ -151,13 +169,25 @@ def build_intraday_candidates_archive(
     else:
         prefix = "intraday_multi"
 
-    (build_dir / "intraday_task.txt").write_text(_task_text(created_msk, candidates) + "\n", encoding="utf-8")
+    # Use one publication timestamp for both the task deadline and runtime pending
+    # state. The old code recomputed expiry after Telegram send, which could cross a
+    # 15m boundary and leave the task and cancellation monitor with different times.
+    publication_utc = datetime.now(timezone.utc)
+    publication_msk = (publication_utc + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+    valid_until_msk = _one_full_15m_deadline_msk(publication_msk)
+    valid_until_naive = datetime.strptime(valid_until_msk.replace(" MSK", ""), "%Y-%m-%d %H:%M")
+    valid_until_epoch = (valid_until_naive - timedelta(hours=3)).replace(tzinfo=timezone.utc).timestamp()
+
+    (build_dir / "intraday_task.txt").write_text(_task_text(publication_msk, candidates) + "\n", encoding="utf-8")
     (build_dir / "status.txt").write_text(_report_text(candidates) + "\n", encoding="utf-8")
     manifest = {
         "archive_type": "intraday_candidates_manual_review",
         "collector_version": settings.app_version,
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
-        "created_at_utc_plus_3_msk": created_msk,
+        "created_at_utc": publication_utc.isoformat(),
+        "created_at_utc_plus_3_msk": publication_msk,
+        "limit_valid_until_utc_plus_3_msk": valid_until_msk,
+        "limit_valid_until_epoch_utc": valid_until_epoch,
+        "chart_created_at_utc_plus_3_msk": chart_created_msk,
         "telegram_archive_stamp_utc_plus_3": finished_stamp,
         "symbols": [r.symbol for r in candidates],
         "candidate_count": len(candidates),
@@ -165,7 +195,7 @@ def build_intraday_candidates_archive(
         "chart_files": chart_files,
         "candle_files": candle_files,
         "instruction_files": ["intraday_task.txt", "status.txt", "reports/*/report.json"],
-        "answer_rule_for_chatgpt": "Use only archive data. Maximum one setup. MANUAL_REVIEW is already confirmed on closed candles; WAIT only for concrete invalidation or data contradiction. LIMIT only. Use suggested Entry/Stop/TP exactly and never tighten structural stop. Every supported asset may produce LONG or SHORT from current closed-candle conditions. The 30d archive is context, not a permanent bull/bear bias; no per-asset direction bans. Sweep/Range remain independently available. Trend entry 0.15 ATR deeper than VWAP, stop beyond 5h closed 15m structure, 2.30/2.40 ATR minimum and 4.00 ATR maximum, targets 0.80/1.60/2.40R. TP1 33%; BE only after closed 15m beyond TP1 or TP2.",
+        "answer_rule_for_chatgpt": "Use only archive data. Maximum one setup. MANUAL_REVIEW is already confirmed on closed candles. LIMIT only and valid for only one complete 15m candle after publication (15–30 minutes). Before fill, cancel if price moves 0.60R toward TP1; never reuse a missed/expired old Entry. Cancel on a later Intraday WAIT/TRANSITION/NO_DATA/missing/opposite/materially rebuilt setup. Use suggested Entry/Stop/TP exactly and never tighten structural stop. Any exact MEXC Futures symbol added with `int ...` may produce LONG or SHORT; there is no fixed Intraday whitelist. Trend local-room floor is a modest 0.12R; stops remain 2.30/2.40 ATR minimum and 4.00 ATR maximum; targets remain 0.80/1.60/2.40R.",
         "storage_policy": "One zip per scan with all green MANUAL_REVIEW candidates only. Fresh 30d download in memory; no parquet/cache is used by Intraday.",
     }
     write_json(build_dir / "manifest.json", _json_safe(manifest))
@@ -181,6 +211,6 @@ def build_intraday_candidates_archive(
             "created_at_utc_plus_3_msk": (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S"),
         })
         logger.info("Intraday candidates archive ready: %s size=%s candidates=%s", zip_path, human_bytes(zip_path.stat().st_size), [r.symbol for r in candidates])
-        return zip_path, candidates
+        return zip_path, candidates, valid_until_epoch
     finally:
         shutil.rmtree(build_dir.parent, ignore_errors=True)

@@ -1,0 +1,729 @@
+{
+  "version": "56_full",
+  "chosen_trend_local_room_r": 0.12,
+  "control_trend_local_room_r": 0.1,
+  "missed_move_cancel_r": 0.6,
+  "limit_validity": "one complete 15m candle after publication (15–30 minutes), with earlier 5m-scan invalidation",
+  "method": "8064 five-minute historical decision scans per asset over about 28 days; consecutive same-direction/same-playbook green scans are one episode. Replay uses 56 logic with the local-room floor post-filtered.",
+  "note": "Counts are distinct green MANUAL_REVIEW episodes, not guaranteed fills or profits.",
+  "assets": {
+    "ETH_USDT": {
+      "source_file": "replay_ETH_room.json",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "thresholds": {
+        "0.10": {
+          "green_scans": 48,
+          "episodes": 34,
+          "per_day": 1.2144363140270371,
+          "per_30d": 36.433089420811115,
+          "directions": {
+            "SHORT": 16,
+            "LONG": 18
+          }
+        },
+        "0.12": {
+          "green_scans": 47,
+          "episodes": 33,
+          "per_day": 1.1787175989085947,
+          "per_30d": 35.36152796725784,
+          "directions": {
+            "SHORT": 16,
+            "LONG": 17
+          }
+        },
+        "0.15": {
+          "green_scans": 33,
+          "episodes": 23,
+          "per_day": 0.8215304477241722,
+          "per_30d": 24.645913431725166,
+          "directions": {
+            "SHORT": 10,
+            "LONG": 13
+          }
+        },
+        "0.20": {
+          "green_scans": 20,
+          "episodes": 14,
+          "per_day": 0.5000620116581918,
+          "per_30d": 15.001860349745753,
+          "directions": {
+            "SHORT": 6,
+            "LONG": 8
+          }
+        },
+        "0.25": {
+          "green_scans": 15,
+          "episodes": 9,
+          "per_day": 0.3214684360659804,
+          "per_30d": 9.644053081979413,
+          "directions": {
+            "SHORT": 4,
+            "LONG": 5
+          }
+        },
+        "0.30": {
+          "green_scans": 4,
+          "episodes": 3,
+          "per_day": 0.1071561453553268,
+          "per_30d": 3.2146843606598043,
+          "directions": {
+            "LONG": 3
+          }
+        },
+        "0.35": {
+          "green_scans": 4,
+          "episodes": 3,
+          "per_day": 0.1071561453553268,
+          "per_30d": 3.2146843606598043,
+          "directions": {
+            "LONG": 3
+          }
+        },
+        "0.40": {
+          "green_scans": 4,
+          "episodes": 3,
+          "per_day": 0.1071561453553268,
+          "per_30d": 3.2146843606598043,
+          "directions": {
+            "LONG": 3
+          }
+        },
+        "0.50": {
+          "green_scans": 0,
+          "episodes": 0,
+          "per_day": 0.0,
+          "per_30d": 0.0,
+          "directions": {}
+        },
+        "0.60": {
+          "green_scans": 0,
+          "episodes": 0,
+          "per_day": 0.0,
+          "per_30d": 0.0,
+          "directions": {}
+        }
+      },
+      "chosen_0_12_vs_control_0_10": {
+        "episode_change": -1,
+        "episode_change_pct": -2.941176470588235
+      }
+    },
+    "SILVER_USDT": {
+      "source_file": "replay_SILVER_room.json",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "thresholds": {
+        "0.10": {
+          "green_scans": 124,
+          "episodes": 68,
+          "per_day": 2.4288726280540742,
+          "per_30d": 72.86617884162223,
+          "directions": {
+            "LONG": 38,
+            "SHORT": 30
+          }
+        },
+        "0.12": {
+          "green_scans": 117,
+          "episodes": 64,
+          "per_day": 2.285997767580305,
+          "per_30d": 68.57993302740915,
+          "directions": {
+            "LONG": 38,
+            "SHORT": 26
+          }
+        },
+        "0.15": {
+          "green_scans": 90,
+          "episodes": 51,
+          "per_day": 1.8216544710405556,
+          "per_30d": 54.649634131216665,
+          "directions": {
+            "LONG": 31,
+            "SHORT": 20
+          }
+        },
+        "0.20": {
+          "green_scans": 70,
+          "episodes": 38,
+          "per_day": 1.3573111745008062,
+          "per_30d": 40.71933523502418,
+          "directions": {
+            "SHORT": 17,
+            "LONG": 21
+          }
+        },
+        "0.25": {
+          "green_scans": 46,
+          "episodes": 26,
+          "per_day": 0.928686593079499,
+          "per_30d": 27.86059779238497,
+          "directions": {
+            "SHORT": 9,
+            "LONG": 17
+          }
+        },
+        "0.30": {
+          "green_scans": 30,
+          "episodes": 17,
+          "per_day": 0.6072181570135186,
+          "per_30d": 18.216544710405557,
+          "directions": {
+            "LONG": 12,
+            "SHORT": 5
+          }
+        },
+        "0.35": {
+          "green_scans": 23,
+          "episodes": 11,
+          "per_day": 0.39290586630286495,
+          "per_30d": 11.787175989085949,
+          "directions": {
+            "LONG": 9,
+            "SHORT": 2
+          }
+        },
+        "0.40": {
+          "green_scans": 22,
+          "episodes": 10,
+          "per_day": 0.3571871511844227,
+          "per_30d": 10.71561453553268,
+          "directions": {
+            "LONG": 8,
+            "SHORT": 2
+          }
+        },
+        "0.50": {
+          "green_scans": 10,
+          "episodes": 7,
+          "per_day": 0.2500310058290959,
+          "per_30d": 7.5009301748728765,
+          "directions": {
+            "LONG": 5,
+            "SHORT": 2
+          }
+        },
+        "0.60": {
+          "green_scans": 9,
+          "episodes": 6,
+          "per_day": 0.2143122907106536,
+          "per_30d": 6.429368721319609,
+          "directions": {
+            "LONG": 5,
+            "SHORT": 1
+          }
+        }
+      },
+      "chosen_0_12_vs_control_0_10": {
+        "episode_change": -4,
+        "episode_change_pct": -5.88235294117647
+      }
+    },
+    "USOIL_USDT": {
+      "source_file": "replay_USOIL_room.json",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "thresholds": {
+        "0.10": {
+          "green_scans": 103,
+          "episodes": 70,
+          "per_day": 2.5003100582909585,
+          "per_30d": 75.00930174872876,
+          "directions": {
+            "LONG": 35,
+            "SHORT": 35
+          }
+        },
+        "0.12": {
+          "green_scans": 91,
+          "episodes": 62,
+          "per_day": 2.2145603373434204,
+          "per_30d": 66.43681012030261,
+          "directions": {
+            "LONG": 31,
+            "SHORT": 31
+          }
+        },
+        "0.15": {
+          "green_scans": 78,
+          "episodes": 53,
+          "per_day": 1.89309190127744,
+          "per_30d": 56.7927570383232,
+          "directions": {
+            "LONG": 29,
+            "SHORT": 24
+          }
+        },
+        "0.20": {
+          "green_scans": 63,
+          "episodes": 42,
+          "per_day": 1.5001860349745753,
+          "per_30d": 45.00558104923726,
+          "directions": {
+            "LONG": 22,
+            "SHORT": 20
+          }
+        },
+        "0.25": {
+          "green_scans": 46,
+          "episodes": 33,
+          "per_day": 1.1787175989085947,
+          "per_30d": 35.36152796725784,
+          "directions": {
+            "LONG": 19,
+            "SHORT": 14
+          }
+        },
+        "0.30": {
+          "green_scans": 30,
+          "episodes": 24,
+          "per_day": 0.8572491628426144,
+          "per_30d": 25.717474885278435,
+          "directions": {
+            "LONG": 13,
+            "SHORT": 11
+          }
+        },
+        "0.35": {
+          "green_scans": 22,
+          "episodes": 16,
+          "per_day": 0.5714994418950763,
+          "per_30d": 17.14498325685229,
+          "directions": {
+            "LONG": 6,
+            "SHORT": 10
+          }
+        },
+        "0.40": {
+          "green_scans": 18,
+          "episodes": 13,
+          "per_day": 0.4643432965397495,
+          "per_30d": 13.930298896192484,
+          "directions": {
+            "LONG": 6,
+            "SHORT": 7
+          }
+        },
+        "0.50": {
+          "green_scans": 6,
+          "episodes": 4,
+          "per_day": 0.14287486047376907,
+          "per_30d": 4.286245814213072,
+          "directions": {
+            "LONG": 1,
+            "SHORT": 3
+          }
+        },
+        "0.60": {
+          "green_scans": 4,
+          "episodes": 3,
+          "per_day": 0.1071561453553268,
+          "per_30d": 3.2146843606598043,
+          "directions": {
+            "SHORT": 3
+          }
+        }
+      },
+      "chosen_0_12_vs_control_0_10": {
+        "episode_change": -8,
+        "episode_change_pct": -11.428571428571429
+      }
+    },
+    "XAU_USDT": {
+      "source_file": "replay_XAU_room.json",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "thresholds": {
+        "0.10": {
+          "green_scans": 38,
+          "episodes": 26,
+          "per_day": 0.928686593079499,
+          "per_30d": 27.86059779238497,
+          "directions": {
+            "LONG": 9,
+            "SHORT": 17
+          }
+        },
+        "0.12": {
+          "green_scans": 35,
+          "episodes": 24,
+          "per_day": 0.8572491628426144,
+          "per_30d": 25.717474885278435,
+          "directions": {
+            "LONG": 9,
+            "SHORT": 15
+          }
+        },
+        "0.15": {
+          "green_scans": 28,
+          "episodes": 20,
+          "per_day": 0.7143743023688454,
+          "per_30d": 21.43122907106536,
+          "directions": {
+            "LONG": 8,
+            "SHORT": 12
+          }
+        },
+        "0.20": {
+          "green_scans": 20,
+          "episodes": 14,
+          "per_day": 0.5000620116581918,
+          "per_30d": 15.001860349745753,
+          "directions": {
+            "LONG": 3,
+            "SHORT": 11
+          }
+        },
+        "0.25": {
+          "green_scans": 17,
+          "episodes": 12,
+          "per_day": 0.4286245814213072,
+          "per_30d": 12.858737442639217,
+          "directions": {
+            "SHORT": 10,
+            "LONG": 2
+          }
+        },
+        "0.30": {
+          "green_scans": 14,
+          "episodes": 9,
+          "per_day": 0.3214684360659804,
+          "per_30d": 9.644053081979413,
+          "directions": {
+            "SHORT": 7,
+            "LONG": 2
+          }
+        },
+        "0.35": {
+          "green_scans": 13,
+          "episodes": 8,
+          "per_day": 0.28574972094753814,
+          "per_30d": 8.572491628426144,
+          "directions": {
+            "SHORT": 6,
+            "LONG": 2
+          }
+        },
+        "0.40": {
+          "green_scans": 12,
+          "episodes": 7,
+          "per_day": 0.2500310058290959,
+          "per_30d": 7.5009301748728765,
+          "directions": {
+            "SHORT": 5,
+            "LONG": 2
+          }
+        },
+        "0.50": {
+          "green_scans": 6,
+          "episodes": 3,
+          "per_day": 0.1071561453553268,
+          "per_30d": 3.2146843606598043,
+          "directions": {
+            "SHORT": 2,
+            "LONG": 1
+          }
+        },
+        "0.60": {
+          "green_scans": 5,
+          "episodes": 2,
+          "per_day": 0.07143743023688454,
+          "per_30d": 2.143122907106536,
+          "directions": {
+            "SHORT": 1,
+            "LONG": 1
+          }
+        }
+      },
+      "chosen_0_12_vs_control_0_10": {
+        "episode_change": -2,
+        "episode_change_pct": -7.6923076923076925
+      }
+    },
+    "BCH_USDT": {
+      "source_file": "replay_bch_room.json",
+      "start": "2026-06-14 05:05:00+00:00",
+      "end": "2026-07-12 05:00:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "thresholds": {
+        "0.10": {
+          "green_scans": 35,
+          "episodes": 26,
+          "per_day": 0.928686593079499,
+          "per_30d": 27.86059779238497,
+          "directions": {
+            "LONG": 16,
+            "SHORT": 10
+          }
+        },
+        "0.12": {
+          "green_scans": 34,
+          "episodes": 25,
+          "per_day": 0.8929678779610567,
+          "per_30d": 26.7890363388317,
+          "directions": {
+            "LONG": 16,
+            "SHORT": 9
+          }
+        },
+        "0.15": {
+          "green_scans": 28,
+          "episodes": 20,
+          "per_day": 0.7143743023688454,
+          "per_30d": 21.43122907106536,
+          "directions": {
+            "SHORT": 7,
+            "LONG": 13
+          }
+        },
+        "0.20": {
+          "green_scans": 20,
+          "episodes": 14,
+          "per_day": 0.5000620116581918,
+          "per_30d": 15.001860349745753,
+          "directions": {
+            "SHORT": 5,
+            "LONG": 9
+          }
+        },
+        "0.25": {
+          "green_scans": 20,
+          "episodes": 14,
+          "per_day": 0.5000620116581918,
+          "per_30d": 15.001860349745753,
+          "directions": {
+            "SHORT": 5,
+            "LONG": 9
+          }
+        },
+        "0.30": {
+          "green_scans": 17,
+          "episodes": 11,
+          "per_day": 0.39290586630286495,
+          "per_30d": 11.787175989085949,
+          "directions": {
+            "SHORT": 4,
+            "LONG": 7
+          }
+        },
+        "0.35": {
+          "green_scans": 15,
+          "episodes": 9,
+          "per_day": 0.3214684360659804,
+          "per_30d": 9.644053081979413,
+          "directions": {
+            "SHORT": 4,
+            "LONG": 5
+          }
+        },
+        "0.40": {
+          "green_scans": 13,
+          "episodes": 8,
+          "per_day": 0.28574972094753814,
+          "per_30d": 8.572491628426144,
+          "directions": {
+            "SHORT": 4,
+            "LONG": 4
+          }
+        },
+        "0.50": {
+          "green_scans": 7,
+          "episodes": 5,
+          "per_day": 0.17859357559221134,
+          "per_30d": 5.35780726776634,
+          "directions": {
+            "SHORT": 3,
+            "LONG": 2
+          }
+        },
+        "0.60": {
+          "green_scans": 4,
+          "episodes": 4,
+          "per_day": 0.14287486047376907,
+          "per_30d": 4.286245814213072,
+          "directions": {
+            "SHORT": 3,
+            "LONG": 1
+          }
+        }
+      },
+      "chosen_0_12_vs_control_0_10": {
+        "episode_change": -1,
+        "episode_change_pct": -3.8461538461538463
+      }
+    },
+    "BTC_USDT": {
+      "source_file": "replay_btc_room.json",
+      "start": "2026-06-14 05:00:00+00:00",
+      "end": "2026-07-12 04:55:00+00:00",
+      "days": 27.99652777777778,
+      "scans": 8064,
+      "thresholds": {
+        "0.10": {
+          "green_scans": 31,
+          "episodes": 27,
+          "per_day": 0.9644053081979412,
+          "per_30d": 28.932159245938237,
+          "directions": {
+            "LONG": 15,
+            "SHORT": 12
+          }
+        },
+        "0.12": {
+          "green_scans": 30,
+          "episodes": 26,
+          "per_day": 0.928686593079499,
+          "per_30d": 27.86059779238497,
+          "directions": {
+            "LONG": 14,
+            "SHORT": 12
+          }
+        },
+        "0.15": {
+          "green_scans": 29,
+          "episodes": 25,
+          "per_day": 0.8929678779610567,
+          "per_30d": 26.7890363388317,
+          "directions": {
+            "LONG": 13,
+            "SHORT": 12
+          }
+        },
+        "0.20": {
+          "green_scans": 17,
+          "episodes": 16,
+          "per_day": 0.5714994418950763,
+          "per_30d": 17.14498325685229,
+          "directions": {
+            "LONG": 10,
+            "SHORT": 6
+          }
+        },
+        "0.25": {
+          "green_scans": 12,
+          "episodes": 12,
+          "per_day": 0.4286245814213072,
+          "per_30d": 12.858737442639217,
+          "directions": {
+            "SHORT": 4,
+            "LONG": 8
+          }
+        },
+        "0.30": {
+          "green_scans": 6,
+          "episodes": 6,
+          "per_day": 0.2143122907106536,
+          "per_30d": 6.429368721319609,
+          "directions": {
+            "SHORT": 2,
+            "LONG": 4
+          }
+        },
+        "0.35": {
+          "green_scans": 4,
+          "episodes": 4,
+          "per_day": 0.14287486047376907,
+          "per_30d": 4.286245814213072,
+          "directions": {
+            "SHORT": 2,
+            "LONG": 2
+          }
+        },
+        "0.40": {
+          "green_scans": 4,
+          "episodes": 4,
+          "per_day": 0.14287486047376907,
+          "per_30d": 4.286245814213072,
+          "directions": {
+            "SHORT": 2,
+            "LONG": 2
+          }
+        },
+        "0.50": {
+          "green_scans": 2,
+          "episodes": 2,
+          "per_day": 0.07143743023688454,
+          "per_30d": 2.143122907106536,
+          "directions": {
+            "LONG": 2
+          }
+        },
+        "0.60": {
+          "green_scans": 2,
+          "episodes": 2,
+          "per_day": 0.07143743023688454,
+          "per_30d": 2.143122907106536,
+          "directions": {
+            "LONG": 2
+          }
+        }
+      },
+      "chosen_0_12_vs_control_0_10": {
+        "episode_change": -1,
+        "episode_change_pct": -3.7037037037037033
+      }
+    }
+  },
+  "pol": {
+    "tested_code_path": true,
+    "frequency_measured": false,
+    "reason": "No POL parquet was supplied."
+  },
+  "btc_incident_validation": {
+    "source": "chatgpt_scan-btc-2234_1207.zip + log_full_20260712_193559_UTC.zip",
+    "initial_scan_utc": "2026-07-12 10:03:02+00:00",
+    "initial": {
+      "regime": "TREND_SHORT",
+      "decision": "MANUAL_REVIEW",
+      "is_green": true,
+      "direction": "SHORT_ONLY",
+      "entry": 63976.57087134756,
+      "stop": 64213.3230142047,
+      "tp1": 63787.16915706185,
+      "local_room_r": 0.27442569500529046
+    },
+    "archive_sent_utc": "2026-07-12 10:05:52+00:00",
+    "next_scan_utc": "2026-07-12 10:11:26+00:00",
+    "next": {
+      "regime": "TREND_SHORT",
+      "decision": "WAIT_PULLBACK",
+      "is_green": false
+    },
+    "cancellation_notices": [
+      "❌ BTC: если старая SHORT LIMIT 63,976.57 выставлена — снять. Новый scan: TREND_SHORT / WAIT_PULLBACK, прежний сценарий больше не MANUAL_REVIEW."
+    ],
+    "would_cancel_before_historical_fill": true
+  },
+  "parser_validation": {
+    "input": "int bch, pol",
+    "result": [
+      "set",
+      [
+        "BCH_USDT",
+        "POL_USDT"
+      ],
+      null
+    ],
+    "both_directions_general_engine": true
+  },
+  "archive_smoke_test": {
+    "built": true,
+    "file": "intraday_btc-2348_1207.zip",
+    "collector_version": "56_full",
+    "task_header": "INTRADAY_TASK 56_full",
+    "contains_local_room_0_12R": true,
+    "contains_missed_move_0_60R": true,
+    "contains_validity_rule": true,
+    "candidate_count": 1
+  }
+}

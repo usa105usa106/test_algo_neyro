@@ -1,0 +1,2306 @@
+[
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-28 05:04:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-28 12:12:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-28 19:21:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-29 02:30:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-29 09:39:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-29 16:48:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-29 23:57:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-30 07:06:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-30 14:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-06-30 21:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-01 04:32:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-01 11:41:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-01 18:50:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-02 01:59:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-02 09:08:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-02 16:17:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-02 23:26:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-03 06:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-03 13:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-03 20:52:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-04 04:01:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-04 11:10:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-04 18:19:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-05 01:28:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-05 08:37:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-05 15:46:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-05 22:55:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-06 06:04:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-06 13:13:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-06 20:21:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-07 03:30:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-07 10:39:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-07 17:48:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-08 00:57:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-08 08:06:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-08 15:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-08 22:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-09 05:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-09 12:41:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-09 19:50:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-10 02:59:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-10 10:08:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-10 17:17:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-11 00:26:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-11 07:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-11 14:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-11 21:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BCH_USDT",
+    "ts": "2026-07-12 05:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-06-28 19:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-06-29 02:43:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-06-29 09:52:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-06-29 17:01:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-06-30 00:10:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-06-30 07:19:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-06-30 14:28:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-06-30 21:37:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-01 04:46:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-01 11:55:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-01 19:03:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-02 02:12:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-02 09:21:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "MANUAL_REVIEW",
+    "decision58": "MANUAL_REVIEW"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-02 16:30:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-02 23:39:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-03 06:48:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-03 13:57:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-03 21:06:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-04 04:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-04 11:23:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-04 18:32:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-05 01:41:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-05 08:50:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-05 15:59:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-05 23:08:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-06 06:17:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-06 13:26:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-06 20:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-07 03:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-07 10:52:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-07 18:01:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-08 01:10:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-08 08:19:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-08 15:28:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-08 22:37:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-09 05:46:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-09 12:55:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-09 20:04:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-10 03:12:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-10 10:21:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-10 17:30:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-11 00:39:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-11 07:48:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-11 14:57:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-11 22:06:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-12 05:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-12 12:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "BTC_USDT",
+    "ts": "2026-07-12 19:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-28 04:58:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-28 12:06:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-28 19:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-29 02:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-29 09:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-29 16:42:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-29 23:51:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-30 07:00:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-30 14:09:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-06-30 21:18:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-01 04:26:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-01 11:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-01 18:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-02 01:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-02 09:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-02 16:11:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-02 23:20:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-03 06:29:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-03 13:38:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-03 20:46:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-04 03:55:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-04 11:04:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-04 18:13:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-05 01:22:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-05 08:31:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-05 15:40:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-05 22:49:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-06 05:58:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-06 13:07:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-06 20:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-07 03:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-07 10:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-07 17:42:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-08 00:51:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-08 08:00:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-08 15:09:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-08 22:18:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-09 05:27:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-09 12:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-09 19:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-10 02:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-10 10:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-10 17:11:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-11 00:20:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-11 07:29:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-11 14:38:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-11 21:47:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "ETH_USDT",
+    "ts": "2026-07-12 04:56:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-28 04:58:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-28 12:06:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-28 19:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-29 02:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-29 09:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-29 16:42:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-29 23:51:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-30 07:00:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-30 14:09:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-06-30 21:18:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-01 04:26:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-01 11:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-01 18:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-02 01:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-02 09:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-02 16:11:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-02 23:20:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-03 06:29:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-03 13:38:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-03 20:46:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-04 03:55:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-04 11:04:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-04 18:13:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-05 01:22:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-05 08:31:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-05 15:40:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-05 22:49:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-06 05:58:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-06 13:07:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-06 20:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-07 03:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-07 10:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-07 17:42:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-08 00:51:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-08 08:00:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-08 15:09:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-08 22:18:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-09 05:27:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-09 12:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-09 19:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-10 02:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-10 10:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-10 17:11:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-11 00:20:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-11 07:29:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-11 14:38:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-11 21:47:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "SILVER_USDT",
+    "ts": "2026-07-12 04:56:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-28 04:58:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-28 12:06:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-28 19:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-29 02:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-29 09:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-29 16:42:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-29 23:51:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-30 07:00:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-30 14:09:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-06-30 21:18:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-01 04:26:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-01 11:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-01 18:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-02 01:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-02 09:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-02 16:11:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-02 23:20:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-03 06:29:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-03 13:38:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-03 20:46:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-04 03:55:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-04 11:04:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-04 18:13:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-05 01:22:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-05 08:31:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-05 15:40:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-05 22:49:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-06 05:58:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-06 13:07:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-06 20:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-07 03:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-07 10:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-07 17:42:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-08 00:51:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-08 08:00:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-08 15:09:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-08 22:18:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-09 05:27:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-09 12:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_EDGE",
+    "decision58": "WAIT_EDGE"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-09 19:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-10 02:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-10 10:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-10 17:11:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-11 00:20:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-11 07:29:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-11 14:38:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-11 21:47:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "USOIL_USDT",
+    "ts": "2026-07-12 04:56:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-28 04:58:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-28 12:06:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-28 19:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-29 02:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-29 09:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-29 16:42:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-29 23:51:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-30 07:00:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-30 14:09:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-06-30 21:18:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-01 04:26:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-01 11:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-01 18:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-02 01:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-02 09:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-02 16:11:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-02 23:20:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-03 06:29:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-03 13:38:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-03 20:46:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-04 03:55:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-04 11:04:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-04 18:13:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-05 01:22:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-05 08:31:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-05 15:40:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-05 22:49:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-06 05:58:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-06 13:07:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-06 20:15:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-07 03:24:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-07 10:33:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-07 17:42:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-08 00:51:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-08 08:00:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-08 15:09:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_SWEEP_CONFIRMATION",
+    "decision58": "WAIT_SWEEP_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-08 22:18:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-09 05:27:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-09 12:35:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-09 19:44:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-10 02:53:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-10 10:02:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_PULLBACK",
+    "decision58": "WAIT_PULLBACK"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-10 17:11:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-11 00:20:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "NO_TRADE",
+    "decision58": "NO_TRADE"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-11 07:29:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-11 14:38:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT",
+    "decision58": "WAIT"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-11 21:47:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  },
+  {
+    "symbol": "XAU_USDT",
+    "ts": "2026-07-12 04:56:00+00:00",
+    "same": true,
+    "diffs": {},
+    "decision57": "WAIT_CONFIRMATION",
+    "decision58": "WAIT_CONFIRMATION"
+  }
+]

@@ -638,6 +638,155 @@ class MexcSpotClient:
             await progress_cb(100.0, len(df), expected_total)
         return df
 
+    @staticmethod
+    def _latest_open_ms(df: pd.DataFrame) -> int | None:
+        if df is None or df.empty or "open_time" not in df.columns:
+            return None
+        values = pd.to_numeric(df["open_time"], errors="coerce").dropna()
+        if values.empty:
+            return None
+        return int(values.max())
+
+    async def download_intraday_klines_dataframe(
+        self,
+        symbol: str,
+        interval: str,
+        window: DownloadWindow,
+        progress_every_requests: int = 10,
+        progress_cb: Callable[[float, int, int], Awaitable[None]] | None = None,
+    ) -> pd.DataFrame:
+        """Download recent Intraday candles without assuming 30 days of listing history.
+
+        Custom contracts can be listed after the requested window start, and MEXC may
+        return an empty *leading* start/end page even though current candles exist.
+        The old strict forward downloader treated that as a fatal hole and produced
+        NO_DATA for valid symbols such as a newly listed/renamed contract.
+
+        Intraday now pages newest -> oldest first. If that endpoint is stale/empty, a
+        tolerant forward pass is used as a second exact-symbol attempt. Recent data
+        gaps are still detected later by the Intraday engine, so this does not turn
+        incomplete candles into a green setup. No symbol substitution is performed.
+        """
+        if interval not in INTERVAL_MS:
+            raise ValueError(f"Unsupported interval: {interval}")
+
+        interval_ms = INTERVAL_MS[interval]
+        expected_total = max(1, (window.end_ms - window.start_ms) // interval_ms)
+        recent_tolerance_ms = max(10 * interval_ms, 10 * 60_000)
+        backward_error: Exception | None = None
+        backward_df = pd.DataFrame()
+
+        async def backward_progress(pct: float, rows: int, expected: int) -> None:
+            if progress_cb:
+                await progress_cb(min(85.0, max(0.0, float(pct)) * 0.85), rows, expected)
+
+        try:
+            backward_df = await self.download_klines_dataframe_backward(
+                symbol,
+                interval,
+                window,
+                progress_every_requests=progress_every_requests,
+                progress_cb=backward_progress,
+            )
+        except Exception as exc:  # noqa: BLE001
+            backward_error = exc
+            self.logger.warning(
+                "Intraday newest-first download failed symbol=%s interval=%s: %s; trying tolerant forward paging",
+                symbol,
+                interval,
+                exc,
+            )
+
+        backward_latest = self._latest_open_ms(backward_df)
+        if backward_latest is not None and backward_latest >= window.end_ms - recent_tolerance_ms:
+            backward_df.attrs["intraday_download_strategy"] = "newest_first"
+            backward_df.attrs["requested_start_ms"] = int(window.start_ms)
+            backward_df.attrs["requested_end_ms"] = int(window.end_ms)
+            if progress_cb:
+                await progress_cb(100.0, len(backward_df), expected_total)
+            self.logger.info(
+                "Intraday data accepted newest-first symbol=%s rows=%s first=%s latest=%s requested_start=%s requested_end=%s",
+                symbol,
+                len(backward_df),
+                int(pd.to_numeric(backward_df["open_time"], errors="coerce").min()) if not backward_df.empty else None,
+                backward_latest,
+                window.start_ms,
+                window.end_ms,
+            )
+            return backward_df
+
+        self.logger.warning(
+            "Intraday newest-first data not recent enough symbol=%s rows=%s latest=%s expected_end=%s; trying tolerant forward paging",
+            symbol,
+            len(backward_df),
+            backward_latest,
+            window.end_ms,
+        )
+
+        async def forward_progress(pct: float, rows: int, expected: int) -> None:
+            if progress_cb:
+                mapped = 85.0 + min(15.0, max(0.0, float(pct)) * 0.15)
+                await progress_cb(mapped, rows, expected)
+
+        forward_error: Exception | None = None
+        forward_df = pd.DataFrame()
+        try:
+            forward_df = await self.download_klines_dataframe(
+                symbol,
+                interval,
+                window,
+                progress_every_requests=progress_every_requests,
+                progress_cb=forward_progress,
+                fail_on_empty_chunk=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            forward_error = exc
+            self.logger.warning(
+                "Intraday tolerant forward download failed symbol=%s interval=%s: %s",
+                symbol,
+                interval,
+                exc,
+            )
+
+        candidates = [df for df in (backward_df, forward_df) if df is not None and not df.empty]
+        if not candidates:
+            detail = "; ".join(
+                part for part in [
+                    f"newest-first: {backward_error}" if backward_error else None,
+                    f"forward: {forward_error}" if forward_error else None,
+                ]
+                if part
+            )
+            suffix = f" ({detail})" if detail else ""
+            raise RuntimeError(
+                f"No 1m candles returned for exact MEXC contract {symbol}. "
+                f"Check that the contract is listed and active{suffix}"
+            )
+
+        # Prefer the source with the freshest last candle; use row count only as a
+        # tie-breaker. A stale result is returned for explicit DATA_WARNING handling
+        # rather than being silently replaced with another asset.
+        chosen = max(
+            candidates,
+            key=lambda df: (self._latest_open_ms(df) or -1, len(df)),
+        )
+        chosen_latest = self._latest_open_ms(chosen)
+        strategy = "tolerant_forward" if chosen is forward_df else "newest_first_stale"
+        chosen.attrs["intraday_download_strategy"] = strategy
+        chosen.attrs["requested_start_ms"] = int(window.start_ms)
+        chosen.attrs["requested_end_ms"] = int(window.end_ms)
+        if progress_cb:
+            await progress_cb(100.0, len(chosen), expected_total)
+        self.logger.info(
+            "Intraday data selected symbol=%s strategy=%s rows=%s latest=%s expected_end=%s",
+            symbol,
+            strategy,
+            len(chosen),
+            chosen_latest,
+            window.end_ms,
+        )
+        return chosen
+
     def _source_exchange_name(self) -> str:
         if self.market_type == "futures":
             return "MEXC_FUTURES_PUBLIC"
