@@ -6,16 +6,39 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-APP_VERSION = "61_full_GMAIL_TELEGRAM_SETUP_SENT_DEDUP"
+APP_VERSION = "61_1_full_GMAIL_HTTPS_REDIRECT_FIX"
 
 
 def _normalize_callback_url(value: str) -> str:
-    value = (value or "").strip().rstrip("/")
+    """Normalize the public Gmail OAuth callback.
+
+    Coolify can expose its generated public URL to the container as ``http://``
+    even though the external reverse proxy is HTTPS. Google requires an exact
+    redirect URI match and rejects non-local HTTP callbacks for sensitive
+    scopes such as ``gmail.send``. Therefore every non-local callback is forced
+    to HTTPS. Localhost remains HTTP for local development only.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    value = (value or "").strip().strip('\"\'').rstrip("/")
     if not value:
         return ""
-    if value.endswith("/gmail/callback"):
-        return value
-    return f"{value}/gmail/callback"
+
+    if "://" not in value:
+        value = f"https://{value}"
+
+    parsed = urlsplit(value)
+    host = (parsed.hostname or "").lower()
+    local_hosts = {"localhost", "127.0.0.1", "::1"}
+    scheme = parsed.scheme.lower()
+    if host not in local_hosts:
+        scheme = "https"
+
+    path = parsed.path.rstrip("/")
+    if not path.endswith("/gmail/callback"):
+        path = f"{path}/gmail/callback" if path else "/gmail/callback"
+
+    return urlunsplit((scheme, parsed.netloc, path, parsed.query, parsed.fragment))
 
 
 def _resolve_gmail_redirect_uri() -> str:
