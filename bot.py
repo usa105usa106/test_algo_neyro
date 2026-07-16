@@ -58,6 +58,7 @@ BTN_GMAIL = "gmail"
 BTN_GMAIL_TEST = "gmail_test"
 BTN_GMAIL_DISCONNECT = "gmail_disconnect"
 BTN_GMAIL_CONFIG = "gmail_config"
+BTN_GMAIL_CHECK = "gmail_check"
 BTN_SCAN_PREFIX = "scan:"
 APLUS_SYMBOL_COOLDOWN_SEC = 45 * 60
 INTRADAY_DEFAULT_SYMBOLS = ["BTC_USDT", "ETH_USDT", "XAU_USDT", "SILVER_USDT", "USOIL_USDT"]
@@ -428,7 +429,9 @@ class BotRuntime:
     def __init__(self, settings: Settings, logger: logging.Logger):
         self.settings = settings
         self.logger = logger
-        self.secret_store = SecretStore(settings.secrets_dir, settings.state_dir, settings.secret_encryption_key)
+        self.secret_store = SecretStore(
+            settings.secrets_dir, settings.state_dir, settings.secret_encryption_key, settings.gmail_backup_root
+        )
         self.gmail = GmailOAuthManager(settings, self.secret_store, logger)
         self.active_task: asyncio.Task | None = None
         self.active_task_name: str | None = None
@@ -814,6 +817,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await handle_gmail_disconnect(update, context)
     elif data == BTN_GMAIL_CONFIG:
         await handle_gmail_config(update, context)
+    elif data == BTN_GMAIL_CHECK:
+        await handle_gmail_check(update, context)
     elif data == BTN_SYMBOLS_CHECK:
         await handle_symbols_check(update, context)
     elif data == BTN_API:
@@ -831,59 +836,152 @@ async def handle_gmail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not await guarded(update, runtime):
         return
     query = update.callback_query
-    callback = runtime.settings.gmail_redirect_uri or "не создан Coolify"
+    chat = update.effective_chat
+    if not query or not chat:
+        return
+
+    callback = runtime.settings.gmail_redirect_uri
+    health = runtime.settings.gmail_health_url
+    storage = runtime.secret_store.storage_status()
+    storage_id = str(storage.get("storage_id") or "unknown")
+    boots = int(storage.get("boot_count") or 0)
+    recovered = bool(storage.get("recovered_from_backup"))
+    backup_ok = bool(storage.get("backup_bundle_ok"))
+
+    if not callback or not health:
+        await query.message.reply_text(
+            "❌ Coolify не передал публичный URL сервису Gmail. "
+            "Callback-сервер внутри контейнера всё равно запущен на порту 80, "
+            "но без внешнего URL Google подключить нельзя. Проверь логи Deploy версии 64.\n\n"
+            f"Хранилище: {storage_id}, запусков: {boots}, резерв: {'OK' if backup_ok else 'НЕТ'}.",
+            reply_markup=main_menu(runtime),
+        )
+        return
+
     if runtime.gmail.connected:
         email_value = runtime.gmail.account_email or "Gmail"
-        keyboard = InlineKeyboardMarkup([
+        try:
+            probe_url = runtime.gmail.create_health_probe_url(chat.id)
+            probe_rows = [
+                [InlineKeyboardButton("🌐 Проверить callback", url=probe_url)],
+                [InlineKeyboardButton("✅ Подтвердить callback", callback_data=BTN_GMAIL_CHECK)],
+            ]
+        except GmailOAuthError:
+            probe_rows = []
+        keyboard = InlineKeyboardMarkup(probe_rows + [
             [InlineKeyboardButton("🧪 Отправить тест", callback_data=BTN_GMAIL_TEST)],
             [InlineKeyboardButton("🔑 Заменить Client ID/Secret", callback_data=BTN_GMAIL_CONFIG)],
             [InlineKeyboardButton("❌ Отключить Gmail", callback_data=BTN_GMAIL_DISCONNECT)],
         ])
         await query.message.reply_text(
-            f"Gmail подключён: {email_value}\n"
+            f"✅ Gmail подключён: {email_value}\n"
             f"OAuth client: {runtime.gmail.client_source}\n"
             f"Автоотправка архивов: {'ON' if runtime.settings.gmail_auto_send_archives else 'OFF'}\n"
+            f"Хранилище: {storage_id}, запусков: {boots}, резерв: {'OK' if backup_ok else 'НЕТ'}"
+            f"{' · восстановлено из резервного volume' if recovered else ''}\n"
             "Письма с ZIP ищи в Gmail → Отправленные.",
             reply_markup=keyboard,
         )
         return
 
-    if callback == "не создан Coolify":
+    if not runtime.gmail.is_health_probe_confirmed(chat.id):
+        try:
+            probe_url = runtime.gmail.create_health_probe_url(chat.id)
+        except GmailOAuthError as exc:
+            await query.message.reply_text(f"❌ Gmail server check: {exc}", reply_markup=main_menu(runtime))
+            return
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🌐 1. Открыть проверку сервера", url=probe_url)],
+            [InlineKeyboardButton("✅ 2. Проверить результат", callback_data=BTN_GMAIL_CHECK)],
+        ])
         await query.message.reply_text(
-            "❌ Coolify ещё не создал публичный Gmail callback URL. "
-            "В версии 62 домен должен автоматически создаваться сервисом gmail-auth-gateway. "
-            "Проверь его логи и сделай Redeploy.",
-            reply_markup=main_menu(runtime),
+            "Сначала проверяем, что Coolify реально доводит запрос до бота.\n\n"
+            "1. Нажми «Открыть проверку сервера». В браузере должен появиться JSON с ok=true.\n"
+            "2. Вернись сюда и нажми «Проверить результат».\n"
+            "3. Только после успешной проверки бот откроет ввод Client ID/Secret.\n\n"
+            f"Проверка сервера:\n{health}\n\n"
+            f"Redirect URI для Google:\n{callback}\n\n"
+            f"Хранилище: {storage_id}, запусков: {boots}, резерв: {'OK' if backup_ok else 'НЕТ'}",
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
         )
         return
 
+    await _show_gmail_ready_step(query.message, runtime, chat.id)
+
+
+async def _show_gmail_ready_step(message: Any, runtime: BotRuntime, chat_id: int) -> None:
+    callback = runtime.settings.gmail_redirect_uri
+    health = runtime.settings.gmail_health_url
     if not runtime.gmail.configured:
-        https_warning = "" if callback.startswith("https://") else "\n⚠️ Google требует HTTPS."
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔑 Ввести Client ID и Secret", callback_data=BTN_GMAIL_CONFIG)],
+            [InlineKeyboardButton("🌐 Проверить сервер заново", callback_data=BTN_GMAIL)],
         ])
-        await query.message.reply_text(
-            "1. В Google Cloud создай OAuth Client типа Web application.\n"
-            "2. В Authorized redirect URI вставь адрес ниже.\n"
-            "3. Нажми кнопку и отправь Client ID, затем Client Secret прямо в этот чат.\n\n"
-            f"Redirect URI:\n{callback}{https_warning}",
+        await message.reply_text(
+            "✅ Публичный callback реально достиг бота.\n\n"
+            "Теперь создай OAuth Client типа Web application и вставь в Google:"
+            f"\n{callback}\n\n"
+            "После этого нажми кнопку ниже и отправь Client ID, затем Client Secret.\n"
+            f"Health: {health}",
             reply_markup=keyboard,
+            disable_web_page_preview=True,
         )
         return
 
     try:
-        authorization_url = runtime.gmail.create_authorization_url(update.effective_chat.id)
+        authorization_url = runtime.gmail.create_authorization_url(chat_id)
     except GmailOAuthError as exc:
-        await query.message.reply_text(f"Gmail OAuth ошибка: {exc}", reply_markup=main_menu(runtime))
+        await message.reply_text(f"❌ Gmail OAuth: {exc}", reply_markup=main_menu(runtime))
         return
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔐 Войти через Google", url=authorization_url)],
         [InlineKeyboardButton("🔑 Заменить Client ID/Secret", callback_data=BTN_GMAIL_CONFIG)],
+        [InlineKeyboardButton("🌐 Проверить сервер заново", callback_data=BTN_GMAIL)],
+    ])
+    await message.reply_text(
+        "✅ Callback работает, Client ID/Secret сохранены.\n"
+        "Нажми «Войти через Google». После возврата Google бот сам подтвердит подключение.\n\n"
+        f"Redirect URI:\n{callback}",
+        reply_markup=keyboard,
+        disable_web_page_preview=True,
+    )
+
+
+async def handle_gmail_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if not await guarded(update, runtime):
+        return
+    query = update.callback_query
+    chat = update.effective_chat
+    if not query or not chat:
+        return
+    if runtime.gmail.is_health_probe_confirmed(chat.id):
+        if runtime.gmail.connected:
+            await query.message.reply_text(
+                "✅ Публичный callback работает. Теперь можно отправить тест или заменить OAuth Client.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🧪 Отправить тест", callback_data=BTN_GMAIL_TEST)],
+                    [InlineKeyboardButton("🔑 Заменить Client ID/Secret", callback_data=BTN_GMAIL_CONFIG)],
+                ]),
+            )
+        else:
+            await _show_gmail_ready_step(query.message, runtime, chat.id)
+        return
+
+    try:
+        probe_url = runtime.gmail.create_health_probe_url(chat.id)
+    except GmailOAuthError as exc:
+        await query.message.reply_text(f"❌ Проверка callback: {exc}", reply_markup=main_menu(runtime))
+        return
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌐 Открыть проверку ещё раз", url=probe_url)],
+        [InlineKeyboardButton("✅ Проверить результат", callback_data=BTN_GMAIL_CHECK)],
     ])
     await query.message.reply_text(
-        "Client ID/Secret сохранены. Нажми кнопку, выбери Gmail и разреши отправку писем. "
-        "После возврата Google бот сам подтвердит подключение.\n\n"
-        f"Текущий Redirect URI:\n{callback}",
+        "❌ Внешний запрос до бота не дошёл. Client ID и Secret пока вводить нельзя.\n"
+        "Открой новую кнопку проверки. Если браузер показывает «no available server», "
+        "сразу смотри Deploy/логи — Google здесь ни при чём.",
         reply_markup=keyboard,
     )
 
@@ -893,17 +991,21 @@ async def handle_gmail_config(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not await guarded(update, runtime):
         return
     user = update.effective_user
-    if not user:
+    chat = update.effective_chat
+    query = update.callback_query
+    if not user or not chat or not query:
         return
-    callback = runtime.settings.gmail_redirect_uri
-    if not callback:
-        await update.callback_query.message.reply_text(
-            "❌ Coolify callback URL ещё не создан. Сначала Redeploy версии 62.",
+    try:
+        runtime.gmail.require_health_probe(chat.id)
+    except GmailOAuthError as exc:
+        await query.message.reply_text(
+            f"❌ {exc}\nСначала нажми «Подключить Gmail» и пройди проверку сервера.",
             reply_markup=main_menu(runtime),
         )
         return
+    callback = runtime.settings.gmail_redirect_uri
     runtime.awaiting_api_step[user.id] = {"step": "gmail_client_id"}
-    await update.callback_query.message.reply_text(
+    await query.message.reply_text(
         "Отправь Google Client ID одним сообщением. Он заканчивается на:\n"
         ".apps.googleusercontent.com\n\n"
         "Сообщение будет сразу удалено ботом. /cancel — отмена.\n\n"

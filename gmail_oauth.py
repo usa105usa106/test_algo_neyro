@@ -61,7 +61,9 @@ class GmailOAuthManager:
 
     Google Client ID/Secret may come from an encrypted Telegram setup file or,
     for backward compatibility, from Coolify environment variables. OAuth tokens
-    and sent-archive idempotency state persist in the named storage volume.
+    and sent-archive idempotency state persist in redundant primary/backup storage.
+    A browser health probe must reach the public Coolify route before credentials
+    can be entered or an OAuth authorization URL can be generated.
     """
 
     def __init__(self, settings: Any, secret_store: Any, logger: logging.Logger):
@@ -69,6 +71,8 @@ class GmailOAuthManager:
         self.secret_store = secret_store
         self.logger = logger
         self._pending_states: dict[str, dict[str, Any]] = {}
+        self._health_probes: dict[str, dict[str, Any]] = {}
+        self._confirmed_probe_chats: dict[int, float] = {}
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
         self._bot: Any | None = None
@@ -151,7 +155,32 @@ class GmailOAuthManager:
             return f"подключён: {email_value} (client: {source})"
         return f"OAuth-клиент сохранён ({source}), Gmail не подключён"
 
+    def create_health_probe_url(self, chat_id: int) -> str:
+        health_url = str(getattr(self.settings, "gmail_health_url", "") or "").strip()
+        if not health_url:
+            raise GmailOAuthError("Coolify не создал публичный URL проверки Gmail.")
+        self._purge_expired_states()
+        token = secrets.token_urlsafe(24)
+        self._health_probes[token] = {
+            "chat_id": int(chat_id),
+            "expires_at": time.time() + 15 * 60,
+        }
+        separator = "&" if "?" in health_url else "?"
+        return f"{health_url}{separator}{urlencode({'probe': token})}"
+
+    def is_health_probe_confirmed(self, chat_id: int, max_age_sec: int = 30 * 60) -> bool:
+        confirmed_at = float(self._confirmed_probe_chats.get(int(chat_id), 0) or 0)
+        return confirmed_at > 0 and (time.time() - confirmed_at) <= max_age_sec
+
+    def require_health_probe(self, chat_id: int) -> None:
+        if not self.is_health_probe_confirmed(chat_id):
+            raise GmailOAuthError(
+                "Публичный callback ещё не подтверждён. Открой кнопку «Проверить сервер», "
+                "вернись в Telegram и нажми «Проверить результат»."
+            )
+
     def create_authorization_url(self, chat_id: int) -> str:
+        self.require_health_probe(chat_id)
         client_id, client_secret, _ = self._client_credentials()
         if not (client_id and client_secret and self.settings.gmail_redirect_uri):
             raise GmailOAuthError(
@@ -180,12 +209,18 @@ class GmailOAuthManager:
 
     async def start_web_server(self, bot: Any) -> None:
         self._bot = bot
-        if not self.settings.gmail_redirect_uri:
-            self.logger.warning("Gmail OAuth web server disabled: Coolify public callback URL is missing.")
+        if self._runner is not None:
             return
+        # Always start the local server. In older versions a missing Coolify URL
+        # prevented the listener from starting at all, which made the proxy show
+        # "no available server" and hid the real configuration problem.
+        if not self.settings.gmail_redirect_uri:
+            self.logger.warning(
+                "Gmail public URL is missing, but local /healthz still starts for diagnostics."
+            )
         if not self.configured:
             self.logger.warning(
-                "Gmail OAuth callback server starts without Google credentials; enter them through Telegram."
+                "Gmail OAuth callback server starts without Google credentials; enter them through Telegram after the public probe succeeds."
             )
         app = web.Application(client_max_size=1024 * 1024)
         app.router.add_get("/healthz", self._healthz)
@@ -199,10 +234,11 @@ class GmailOAuthManager:
         )
         await self._site.start()
         self.logger.info(
-            "Gmail OAuth callback server started on %s:%s redirect=%s",
+            "Gmail OAuth server started on %s:%s redirect=%s health=%s",
             self.settings.gmail_oauth_listen_host,
             self.settings.gmail_oauth_listen_port,
-            self.settings.gmail_redirect_uri,
+            self.settings.gmail_redirect_uri or "missing",
+            getattr(self.settings, "gmail_health_url", "") or "missing",
         )
 
     async def stop_web_server(self) -> None:
@@ -447,14 +483,23 @@ class GmailOAuthManager:
             raise GmailOAuthError(f"Сетевая ошибка тестового письма: {exc}") from exc
 
     async def _healthz(self, request: web.Request) -> web.Response:
+        self._purge_expired_states()
+        probe = str(request.query.get("probe") or "")
+        probe_confirmed = False
+        if probe:
+            pending = self._health_probes.pop(probe, None)
+            if pending and float(pending.get("expires_at", 0)) > time.time():
+                chat_id = int(pending["chat_id"])
+                self._confirmed_probe_chats[chat_id] = time.time()
+                probe_confirmed = True
+                self.logger.info("Gmail external health probe confirmed chat_id=%s", chat_id)
         return web.json_response(
             {
                 "ok": True,
-                "gmail_configured": self.configured,
-                "gmail_connected": self.connected,
-                "gmail_redirect_uri": self.settings.gmail_redirect_uri or None,
-                "gmail_client_source": self.client_source,
-            }
+                "service": "gmail-oauth-callback",
+                "probe_confirmed": probe_confirmed,
+            },
+            headers={"Cache-Control": "no-store"},
         )
 
     async def _oauth_callback(self, request: web.Request) -> web.Response:
@@ -644,6 +689,12 @@ class GmailOAuthManager:
         expired = [key for key, item in self._pending_states.items() if float(item.get("expires_at", 0)) <= now]
         for key in expired:
             self._pending_states.pop(key, None)
+        expired_probes = [key for key, item in self._health_probes.items() if float(item.get("expires_at", 0)) <= now]
+        for key in expired_probes:
+            self._health_probes.pop(key, None)
+        stale_chats = [chat_id for chat_id, confirmed_at in self._confirmed_probe_chats.items() if now - confirmed_at > 30 * 60]
+        for chat_id in stale_chats:
+            self._confirmed_probe_chats.pop(chat_id, None)
 
     @staticmethod
     async def _response_json(response: aiohttp.ClientResponse) -> Any:

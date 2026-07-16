@@ -1,4 +1,4 @@
-# ChatGPT Scan Bot 30d — 58_full
+# ChatGPT Scan Bot 30d — 64_full
 
 Telegram bot for manual / semi-automatic trading analysis with ChatGPT.
 
@@ -398,11 +398,12 @@ INTRADAY_DAYS_BACK=30
 - Parquet equivalence audit: 288 checkpoints across BTC/BCH/ETH/XAU/SILVER/USOIL produced zero decision/Entry/Stop/TP differences versus 57_full.
 - `/ping` must report `58_full`.
 
-## Gmail OAuth одной кнопкой
+## Gmail OAuth — версия 64
 
-Версия `61_full_GMAIL_TELEGRAM_SETUP_SENT_DEDUP` принимает Google Client ID/Secret прямо через Telegram, сохраняет их зашифрованно и не требует Gmail-переменных в Coolify. ZIP отправляется в Gmail только после Telegram, с проверкой имени/размера/SHA-256 и постоянной защитой от дублей. Письма проверяются в папке **Gmail → Отправленные**. Подробности: [`GMAIL_ONE_BUTTON_SETUP_RU.md`](GMAIL_ONE_BUTTON_SETUP_RU.md).
+- Callback-сервер слушает стандартный внутренний порт `80`; ручной `:8080` и отдельный gateway удалены.
+- Бот сам показывает кнопку `/healthz` и не принимает Client ID/Secret, пока внешний запрос реально не достиг контейнера.
+- Gmail-настройки зеркалируются в фиксированную папку VPS и глобальный Docker volume и восстанавливаются из резервной копии при пустом основном хранилище.
+- ZIP отправляется в Gmail только после Telegram, с проверкой точного имени, размера, SHA-256 и защитой от дублей.
+- Письма ищутся в **Gmail → Отправленные**.
 
-
-## 62_full Gmail gateway + persistence
-
-Версия `62_full_GMAIL_GATEWAY_PORT_PERSISTENCE` добавляет отдельный `gmail-auth-gateway`: Coolify публикует его на стандартном порту, а gateway проксирует OAuth callback на внутренний порт `8080` бота. Ручная настройка Domains/порта не требуется. Gmail Client ID, Client Secret, token и dedup-журнал мигрируют из старого v61 volume в глобальный `chatgpt_scan_storage` и сохраняются после Redeploy. Подробности: `GMAIL_62_CHANGELOG.md` и `GMAIL_62_TEST_REPORT.md`.
+Подробности: [`GMAIL_ONE_BUTTON_SETUP_RU.md`](GMAIL_ONE_BUTTON_SETUP_RU.md).

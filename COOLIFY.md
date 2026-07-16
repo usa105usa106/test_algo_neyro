@@ -1,60 +1,59 @@
-# Coolify deploy — ChatGPT Scan Bot 62
+# Coolify — версия 64
 
-## Что вводить в Coolify
+## Обязательные переменные
 
-Только существующие обязательные переменные:
-
-```text
+```env
 TELEGRAM_BOT_TOKEN=...
 ADMIN_TELEGRAM_ID=...
 ```
 
-Gmail Client ID и Client Secret вводятся через Telegram. Домен, callback и порт вручную не прописываются.
+Gmail Client ID, Client Secret, Redirect URI, порт и домен вручную в Coolify не добавляются.
 
 ## Deploy
 
-1. Загрузи версию 62 в существующий ресурс Coolify и нажми Deploy/Redeploy.
-2. В стеке появятся два сервиса:
-   - `chatgpt-scan-bot` — Telegram-бот и callback на внутреннем порту `8080`;
-   - `gmail-auth-gateway` — публичный вход на порту `80`.
-3. Coolify автоматически создаёт URL с тем же идентификатором `GMAIL-AUTH`.
-4. При первом запуске настройки из старого volume v61 переносятся в глобальный `chatgpt_scan_storage`.
+1. Загрузить проект версии 64 в существующий ресурс.
+2. Нажать Deploy/Redeploy.
+3. Убедиться, что контейнер `chatgpt-scan-bot` healthy.
+4. Открыть Telegram → `📧 Подключить Gmail`.
+5. Выполнить встроенную двухшаговую проверку сервера.
 
-В логах бота должна появиться строка:
+## Маршрутизация
 
-```text
-v62 storage migration: ...
-```
-
-## Проверка
-
-Открой прежний адрес, заменив callback на healthz:
+Compose объявляет:
 
 ```text
-https://ТВОЙ-COOLIFY-ДОМЕН/healthz
+SERVICE_URL_GMAIL-AUTH
+GMAIL_OAUTH_LISTEN_PORT=80
+expose: 80
 ```
 
-Ожидается JSON с `"ok": true`.
+Сервис слушает стандартный контейнерный порт 80. Поэтому отдельный nginx-gateway, ручной Domains и `:8080` не используются.
 
-Для текущего домена пользователя:
+## Хранилища
+
+Основное:
 
 ```text
-https://n1tsckrun1zjl962g41cxzar.2.27.62.210.sslip.io/healthz
+/data/chatgpt-scan-bot-storage -> /app/storage
 ```
 
-Google Cloud оставь с прежним Redirect URI:
+Резервное:
 
 ```text
-https://n1tsckrun1zjl962g41cxzar.2.27.62.210.sslip.io/gmail/callback
+chatgpt_scan_storage -> /app/storage_backup
 ```
 
-OAuth-клиент заново создавать не нужно.
+Gmail-секреты, OAuth token и журнал ZIP атомарно собираются в резервный `gmail_bundle_backup.json`. При пустом основном хранилище бот восстанавливает связку ключа и encrypted files из этого bundle; существующий MEXC API key при восстановлении не повреждается.
 
-## После Deploy
+## Диагностика
 
-В Telegram нажми `📧 Подключить Gmail`.
+В Deploy logs должны быть строки:
 
-- Если Client ID/Secret перенеслись, сразу появится `🔐 Войти через Google`.
-- Если старое хранилище не найдено, бот попросит ввести Client ID и Secret один раз.
+```text
+v64 primary storage: /app/storage
+v64 backup storage: /app/storage_backup
+v64 OAuth listen: 0.0.0.0:80
+SERVICE_URL_GMAIL-AUTH=<generated>
+```
 
-После подключения нажми `🧪 Отправить тест`.
+Если Telegram не показывает публичный URL, значит Coolify не создал magic URL. Если кнопка проверки открывает `no available server`, контейнер или healthcheck не стал healthy; Client ID/Secret бот в этом состоянии не принимает.
