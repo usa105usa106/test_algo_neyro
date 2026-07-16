@@ -397,3 +397,7 @@ INTRADAY_DAYS_BACK=30
 - Trading thresholds are unchanged: Trend local room remains `0.12R`; structural stops remain 2.30/2.40 ATR minimum and 4.00 ATR maximum; targets remain 0.80/1.60/2.40R.
 - Parquet equivalence audit: 288 checkpoints across BTC/BCH/ETH/XAU/SILVER/USOIL produced zero decision/Entry/Stop/TP differences versus 57_full.
 - `/ping` must report `58_full`.
+
+## Gmail OAuth одной кнопкой
+
+Версия `61_full_GMAIL_TELEGRAM_SETUP_SENT_DEDUP` принимает Google Client ID/Secret прямо через Telegram, сохраняет их зашифрованно и не требует Gmail-переменных в Coolify. ZIP отправляется в Gmail только после Telegram, с проверкой имени/размера/SHA-256 и постоянной защитой от дублей. Письма проверяются в папке **Gmail → Отправленные**. Подробности: [`GMAIL_ONE_BUTTON_SETUP_RU.md`](GMAIL_ONE_BUTTON_SETUP_RU.md).

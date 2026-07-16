@@ -1,4 +1,4 @@
-# Coolify deploy — ChatGPT Scan Bot 30d 58_full
+# Coolify deploy — ChatGPT Scan Bot 30d 61_full
 
 ## Required env
 
@@ -221,3 +221,7 @@ If a symbol has less history than `DAYS_BACK` (for example Gold only has ~24 day
 - Archive task and runtime cancellation monitor now share the same fixed expiry timestamp.
 - Trading filters, local-room threshold, structural stops, targets, all other modes, and all non-Intraday tasks are unchanged.
 - `/ping` must report `58_full`.
+
+## Gmail OAuth callback (v59)
+
+Инструкция: `GMAIL_ONE_BUTTON_SETUP_RU.md`. Контейнер слушает callback на `8080`, а Coolify автоматически создаёт публичный HTTPS URL через `SERVICE_URL_GMAIL-AUTH_8080=/gmail/callback`. Ручной домен, `GMAIL_REDIRECT_URI`, `GMAIL_CLIENT_ID` и `GMAIL_CLIENT_SECRET` в Coolify не нужны: OAuth-клиент вводится через Telegram и хранится зашифрованно в volume.

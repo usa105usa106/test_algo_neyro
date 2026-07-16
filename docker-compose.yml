@@ -5,17 +5,32 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID}
-      DATA_ROOT: /app/storage
-      TELEGRAM_SEND_LIMIT_MB: ${TELEGRAM_SEND_LIMIT_MB:-48}
-      DAYS_BACK: ${DAYS_BACK:-30}
-      BASE_INTERVAL: ${BASE_INTERVAL:-1m}
-      MEXC_BASE_URL: ${MEXC_BASE_URL:-https://api.mexc.com}
-      MIN_COVERAGE_RATIO: ${MIN_COVERAGE_RATIO:-0.80}
-      MIN_EFFECTIVE_DAYS: ${MIN_EFFECTIVE_DAYS:-20}
-      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
-      TZ: ${TZ:-UTC}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?}
+      - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID:?}
+      - DATA_ROOT=/app/storage
+      - TELEGRAM_SEND_LIMIT_MB=${TELEGRAM_SEND_LIMIT_MB:-48}
+      - DAYS_BACK=${DAYS_BACK:-30}
+      - BASE_INTERVAL=${BASE_INTERVAL:-1m}
+      - MEXC_BASE_URL=${MEXC_BASE_URL:-https://api.mexc.com}
+      - MIN_COVERAGE_RATIO=${MIN_COVERAGE_RATIO:-0.80}
+      - MIN_EFFECTIVE_DAYS=${MIN_EFFECTIVE_DAYS:-20}
+      - SECRET_ENCRYPTION_KEY=${SECRET_ENCRYPTION_KEY:-}
+      - TZ=${TZ:-UTC}
+
+      # Google Client ID/Secret are entered through the Telegram admin chat
+      # and stored encrypted in the persistent volume.
+
+      # Coolify generates a public HTTPS URL and routes it to container port 8080.
+      # The generated value already includes /gmail/callback.
+      - SERVICE_URL_GMAIL-AUTH_8080=/gmail/callback
+
+      # Fixed Gmail settings: no manual Coolify configuration required.
+      - GMAIL_AUTO_SEND_ARCHIVES=true
+      - GMAIL_MAX_ATTACHMENT_MB=24
+      - GMAIL_OAUTH_LISTEN_HOST=0.0.0.0
+      - GMAIL_OAUTH_LISTEN_PORT=8080
+    expose:
+      - "8080"
     volumes:
       - chatgpt_scan_storage:/app/storage
 

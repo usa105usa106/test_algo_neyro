@@ -32,6 +32,14 @@ from intraday_archive import build_intraday_candidates_archive
 from intraday_engine import IntradayReport, analyze_intraday_symbol
 from config import SCAN_PRESETS, SYMBOL_CANDIDATES, ScanPreset, Settings, load_settings
 from file_utils import human_bytes, read_json, safe_rmtree, split_file, write_json
+from gmail_oauth import (
+    ArchiveIdentity,
+    GmailArchiveChanged,
+    GmailAttachmentTooLarge,
+    GmailOAuthError,
+    GmailOAuthManager,
+    GmailSendUncertain,
+)
 from logging_setup import setup_logging
 from mexc import DownloadWindow, INTERVAL_MS, MexcSpotClient
 from security import SecretStore
@@ -46,6 +54,10 @@ BTN_APLUS_HUNTER = "aplus_hunter_toggle"
 BTN_INTRADAY = "intraday_toggle"
 BTN_STRESS_TEST = "stress_test"
 BTN_STRESS_TEST2 = "stress_test2"
+BTN_GMAIL = "gmail"
+BTN_GMAIL_TEST = "gmail_test"
+BTN_GMAIL_DISCONNECT = "gmail_disconnect"
+BTN_GMAIL_CONFIG = "gmail_config"
 BTN_SCAN_PREFIX = "scan:"
 APLUS_SYMBOL_COOLDOWN_SEC = 45 * 60
 INTRADAY_DEFAULT_SYMBOLS = ["BTC_USDT", "ETH_USDT", "XAU_USDT", "SILVER_USDT", "USOIL_USDT"]
@@ -417,6 +429,7 @@ class BotRuntime:
         self.settings = settings
         self.logger = logger
         self.secret_store = SecretStore(settings.secrets_dir, settings.state_dir, settings.secret_encryption_key)
+        self.gmail = GmailOAuthManager(settings, self.secret_store, logger)
         self.active_task: asyncio.Task | None = None
         self.active_task_name: str | None = None
         self.awaiting_api_step: dict[int, dict[str, Any]] = {}
@@ -568,6 +581,7 @@ def main_menu(runtime: BotRuntime | None = None) -> InlineKeyboardMarkup:
     montage_label = f"🧩 Montage: {'ON' if runtime and runtime.montage_enabled else 'OFF'}"
     aplus_label = f"🎯 A+ Hunter: {'ON' if runtime and runtime.aplus_hunter_enabled else 'OFF'}"
     intraday_label = f"📊 Intraday: {'ON' if runtime and runtime.intraday_enabled else 'OFF'}"
+    gmail_label = "📧 Gmail: ON" if runtime and runtime.gmail.connected else "📧 Подключить Gmail"
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📊 Gold 30d", callback_data=f"{BTN_SCAN_PREFIX}gold"),
@@ -593,6 +607,7 @@ def main_menu(runtime: BotRuntime | None = None) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🧪 Stress Test 2", callback_data=BTN_STRESS_TEST2),
         ],
         [
+            InlineKeyboardButton(gmail_label, callback_data=BTN_GMAIL),
             InlineKeyboardButton("⚙️ Symbols check", callback_data=BTN_SYMBOLS_CHECK),
         ],
         [
@@ -638,6 +653,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"{api_text}\n"
         f"Montage: {'ON' if runtime.montage_enabled else 'OFF'}\n"
         f"Intraday: {'ON' if runtime.intraday_enabled else 'OFF'} — {_symbols_short_list(runtime.intraday_symbols)}\n"
+        f"Gmail: {runtime.gmail.status_text()}\n"
         "Команды Intraday-списка: int pol, xrp, sol / int del.\n"
         "В коде нет place_order/cancel_order, бот не открывает сделки.",
         runtime,
@@ -672,6 +688,12 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "• int pol, xrp, sol — заменить список монет для Intraday.\n"
         "• int pol, int xrp, int sol — то же самое, можно писать с повтором int.\n"
         "• int del — вернуть список по умолчанию: BTC, ETH, XAU, SILVER, USOIL.\n\n"
+        "Gmail:\n"
+        "• Client ID и Client Secret вводятся через Telegram и сохраняются зашифрованно; Coolify-переменные не нужны.\n"
+        "• Кнопка Подключить Gmail запускает Google OAuth. Пароль Gmail боту не передаётся.\n"
+        "• После успешной отправки ZIP в Telegram тот же файл один раз отправляется через Gmail API.\n"
+        "• Письмо всегда доступно в Gmail → Отправленные; дубли блокируются по имени, размеру и SHA-256.\n"
+        "• /reset не удаляет Gmail-токен или OAuth-клиент; отключение делается отдельной кнопкой.\n\n"
         "Служебные команды:\n"
         "• /api — сохранить MEXC API key/secret для meta/status.\n"
         "• /log_full — скачать полный лог процесса.\n"
@@ -704,6 +726,8 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"- intraday_days_back: {runtime.settings.intraday_days_back}",
         f"- data_root: {runtime.settings.data_root}",
         f"- API: {api_mask['api_key'] if api_mask else 'not set'}",
+        f"- Gmail: {runtime.gmail.status_text()}",
+        f"- Gmail auto-send: {runtime.settings.gmail_auto_send_archives}",
         "- last exports:",
     ]
     if exports:
@@ -782,6 +806,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.message.reply_text("Неизвестная scan-кнопка.", reply_markup=main_menu(runtime))
             return
         await start_scan_job(update, context, preset)
+    elif data == BTN_GMAIL:
+        await handle_gmail(update, context)
+    elif data == BTN_GMAIL_TEST:
+        await handle_gmail_test(update, context)
+    elif data == BTN_GMAIL_DISCONNECT:
+        await handle_gmail_disconnect(update, context)
+    elif data == BTN_GMAIL_CONFIG:
+        await handle_gmail_config(update, context)
     elif data == BTN_SYMBOLS_CHECK:
         await handle_symbols_check(update, context)
     elif data == BTN_API:
@@ -792,6 +824,132 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await handle_reset(update, context)
     elif data == BTN_PING:
         await handle_ping(update, context)
+
+
+async def handle_gmail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if not await guarded(update, runtime):
+        return
+    query = update.callback_query
+    callback = runtime.settings.gmail_redirect_uri or "не создан Coolify"
+    if runtime.gmail.connected:
+        email_value = runtime.gmail.account_email or "Gmail"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🧪 Отправить тест", callback_data=BTN_GMAIL_TEST)],
+            [InlineKeyboardButton("🔑 Заменить Client ID/Secret", callback_data=BTN_GMAIL_CONFIG)],
+            [InlineKeyboardButton("❌ Отключить Gmail", callback_data=BTN_GMAIL_DISCONNECT)],
+        ])
+        await query.message.reply_text(
+            f"Gmail подключён: {email_value}\n"
+            f"OAuth client: {runtime.gmail.client_source}\n"
+            f"Автоотправка архивов: {'ON' if runtime.settings.gmail_auto_send_archives else 'OFF'}\n"
+            "Письма с ZIP ищи в Gmail → Отправленные.",
+            reply_markup=keyboard,
+        )
+        return
+
+    if callback == "не создан Coolify":
+        await query.message.reply_text(
+            "❌ Coolify ещё не создал публичный Gmail callback URL на порту 8080. "
+            "Проверь SERVICE_URL_GMAIL-AUTH_8080 и Redeploy.",
+            reply_markup=main_menu(runtime),
+        )
+        return
+
+    if not runtime.gmail.configured:
+        https_warning = "" if callback.startswith("https://") else "\n⚠️ Google требует HTTPS."
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔑 Ввести Client ID и Secret", callback_data=BTN_GMAIL_CONFIG)],
+        ])
+        await query.message.reply_text(
+            "1. В Google Cloud создай OAuth Client типа Web application.\n"
+            "2. В Authorized redirect URI вставь адрес ниже.\n"
+            "3. Нажми кнопку и отправь Client ID, затем Client Secret прямо в этот чат.\n\n"
+            f"Redirect URI:\n{callback}{https_warning}",
+            reply_markup=keyboard,
+        )
+        return
+
+    try:
+        authorization_url = runtime.gmail.create_authorization_url(update.effective_chat.id)
+    except GmailOAuthError as exc:
+        await query.message.reply_text(f"Gmail OAuth ошибка: {exc}", reply_markup=main_menu(runtime))
+        return
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔐 Войти через Google", url=authorization_url)],
+        [InlineKeyboardButton("🔑 Заменить Client ID/Secret", callback_data=BTN_GMAIL_CONFIG)],
+    ])
+    await query.message.reply_text(
+        "Client ID/Secret сохранены. Нажми кнопку, выбери Gmail и разреши отправку писем. "
+        "После возврата Google бот сам подтвердит подключение.\n\n"
+        f"Текущий Redirect URI:\n{callback}",
+        reply_markup=keyboard,
+    )
+
+
+async def handle_gmail_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if not await guarded(update, runtime):
+        return
+    user = update.effective_user
+    if not user:
+        return
+    callback = runtime.settings.gmail_redirect_uri
+    if not callback:
+        await update.callback_query.message.reply_text(
+            "❌ Coolify callback URL ещё не создан. Сначала Redeploy версии 61.",
+            reply_markup=main_menu(runtime),
+        )
+        return
+    runtime.awaiting_api_step[user.id] = {"step": "gmail_client_id"}
+    await update.callback_query.message.reply_text(
+        "Отправь Google Client ID одним сообщением. Он заканчивается на:\n"
+        ".apps.googleusercontent.com\n\n"
+        "Сообщение будет сразу удалено ботом. /cancel — отмена.\n\n"
+        f"Redirect URI для Google:\n{callback}"
+    )
+
+
+async def _delete_sensitive_telegram_message(update: Update, runtime: BotRuntime, label: str) -> bool:
+    message = update.effective_message
+    chat = update.effective_chat
+    if not message or not chat:
+        return False
+    try:
+        await message.delete()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.warning("Could not delete sensitive Telegram message label=%s: %s", label, exc)
+        return False
+
+
+async def handle_gmail_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if not await guarded(update, runtime):
+        return
+    try:
+        await runtime.gmail.send_test()
+        await update.callback_query.message.reply_text(
+            f"✅ Тестовое письмо отправлено. Проверь Gmail → Отправленные: "
+            f"{runtime.settings.gmail_send_to or runtime.gmail.account_email}.",
+            reply_markup=main_menu(runtime),
+        )
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.exception("Gmail test failed: %s", exc)
+        await update.callback_query.message.reply_text(
+            f"❌ Gmail test ошибка: {exc}", reply_markup=main_menu(runtime)
+        )
+
+
+async def handle_gmail_disconnect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if not await guarded(update, runtime):
+        return
+    runtime.gmail.disconnect()
+    await update.callback_query.message.reply_text(
+        "Gmail отключён. Refresh token удалён. Client ID/Secret сохранены, поэтому можно сразу подключить Gmail заново.",
+        reply_markup=main_menu(runtime),
+    )
 
 
 async def start_api_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -890,6 +1048,59 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if text.lower() in {"/cancel", "cancel", "отмена"}:
         runtime.awaiting_api_step.pop(user.id, None)
         await reply_with_menu(update, "Ок, отменено.", runtime)
+        return
+
+    if state["step"] == "gmail_client_id":
+        deleted = await _delete_sensitive_telegram_message(update, runtime, "gmail_client_id")
+        try:
+            client_id = runtime.gmail.validate_client_id(text)
+        except GmailOAuthError as exc:
+            warning = "" if deleted else "\n⚠️ Не удалось удалить исходное сообщение; удали его вручную."
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"❌ {exc}\nОтправь Client ID ещё раз.{warning}",
+            )
+            return
+        state["gmail_client_id"] = client_id
+        state["step"] = "gmail_client_secret"
+        warning = "" if deleted else "\n⚠️ Не удалось удалить сообщение с Client ID; удали его вручную."
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="✅ Client ID принят. Теперь отправь Google Client Secret одним сообщением. "
+                 "Бот также сразу удалит его." + warning,
+        )
+        return
+
+    if state["step"] == "gmail_client_secret":
+        deleted = await _delete_sensitive_telegram_message(update, runtime, "gmail_client_secret")
+        client_id = str(state.get("gmail_client_id") or "")
+        try:
+            mask = runtime.gmail.save_client_credentials(client_id, text)
+        except GmailOAuthError as exc:
+            warning = "" if deleted else "\n⚠️ Не удалось удалить исходное сообщение; удали его вручную."
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"❌ {exc}\nОтправь Client Secret ещё раз.{warning}",
+            )
+            return
+        runtime.awaiting_api_step.pop(user.id, None)
+        try:
+            authorization_url = runtime.gmail.create_authorization_url(update.effective_chat.id)
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔐 Войти через Google", url=authorization_url)]])
+        except GmailOAuthError as exc:
+            authorization_url = None
+            keyboard = main_menu(runtime)
+            runtime.logger.warning("Could not build Gmail authorization URL after saving client: %s", exc)
+        warning = "" if deleted else "\n⚠️ Не удалось удалить сообщение с Client Secret; удали его вручную."
+        text_out = (
+            f"✅ Google OAuth client сохранён зашифрованно.\n"
+            f"Client ID: {mask['client_id']}\n"
+            "Старый Gmail token, если был, отключён — OAuth-клиенты нельзя смешивать."
+            f"{warning}"
+        )
+        if authorization_url:
+            text_out += "\nТеперь нажми «Войти через Google»."
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text_out, reply_markup=keyboard)
         return
 
     if state["step"] == "api_key":
@@ -1093,21 +1304,31 @@ def _active_aplus_cooldowns(runtime: BotRuntime) -> dict[str, float]:
 async def send_aplus_archive_only(context: ContextTypes.DEFAULT_TYPE, chat_id: int, zip_path: Path, runtime: BotRuntime) -> None:
     limit_bytes = runtime.settings.telegram_send_limit_mb * 1024 * 1024
     size = zip_path.stat().st_size
+    gmail_identity = await _prepare_gmail_archive_identity(runtime, zip_path)
     runtime.logger.info("A+ Hunter Telegram send start file=%s size=%s chat_id=%s limit_mb=%s", zip_path.name, human_bytes(size), chat_id, runtime.settings.telegram_send_limit_mb)
     if size > limit_bytes:
         runtime.logger.info("A+ Hunter archive exceeds Telegram limit, sending as parts: file=%s", zip_path.name)
-        await send_archive_or_parts(context, chat_id, zip_path, runtime)
+        await send_archive_or_parts(context, chat_id, zip_path, runtime, email_archive=False)
+        await maybe_send_archive_to_gmail(
+            context, chat_id, zip_path, runtime, "A+ Hunter",
+            expected_identity=gmail_identity, telegram_filename=zip_path.name,
+        )
         runtime.logger.info("A+ Hunter Telegram send done via parts file=%s", zip_path.name)
         return
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
     with zip_path.open("rb") as f:
-        await context.bot.send_document(
+        sent_message = await context.bot.send_document(
             chat_id=chat_id,
             document=f,
             filename=zip_path.name,
             caption=f"🎯 A+ Hunter archive: {zip_path.name}\nРазмер: {human_bytes(size)}",
         )
+    telegram_filename = getattr(getattr(sent_message, "document", None), "file_name", None) or zip_path.name
     runtime.logger.info("A+ Hunter Telegram send done file=%s chat_id=%s", zip_path.name, chat_id)
+    await maybe_send_archive_to_gmail(
+        context, chat_id, zip_path, runtime, "A+ Hunter",
+        expected_identity=gmail_identity, telegram_filename=telegram_filename,
+    )
 
 
 async def toggle_aplus_hunter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1529,21 +1750,31 @@ def _intraday_status_text(reports: list[Any], created_msk: str, symbols: list[st
 async def send_intraday_archive_only(context: ContextTypes.DEFAULT_TYPE, chat_id: int, zip_path: Path, runtime: BotRuntime) -> None:
     limit_bytes = runtime.settings.telegram_send_limit_mb * 1024 * 1024
     size = zip_path.stat().st_size
+    gmail_identity = await _prepare_gmail_archive_identity(runtime, zip_path)
     runtime.logger.info("Intraday Telegram send start file=%s size=%s chat_id=%s limit_mb=%s", zip_path.name, human_bytes(size), chat_id, runtime.settings.telegram_send_limit_mb)
     if size > limit_bytes:
         runtime.logger.info("Intraday archive exceeds Telegram limit, sending as parts: file=%s", zip_path.name)
-        await send_archive_or_parts(context, chat_id, zip_path, runtime)
+        await send_archive_or_parts(context, chat_id, zip_path, runtime, email_archive=False)
+        await maybe_send_archive_to_gmail(
+            context, chat_id, zip_path, runtime, "Intraday",
+            expected_identity=gmail_identity, telegram_filename=zip_path.name,
+        )
         runtime.logger.info("Intraday Telegram send done via parts file=%s", zip_path.name)
         return
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
     with zip_path.open("rb") as f:
-        await context.bot.send_document(
+        sent_message = await context.bot.send_document(
             chat_id=chat_id,
             document=f,
             filename=zip_path.name,
             caption=f"📦 Intraday archive: {zip_path.name}\nРазмер: {human_bytes(size)}",
         )
+    telegram_filename = getattr(getattr(sent_message, "document", None), "file_name", None) or zip_path.name
     runtime.logger.info("Intraday Telegram send done file=%s chat_id=%s", zip_path.name, chat_id)
+    await maybe_send_archive_to_gmail(
+        context, chat_id, zip_path, runtime, "Intraday",
+        expected_identity=gmail_identity, telegram_filename=telegram_filename,
+    )
 
 
 async def toggle_intraday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2050,12 +2281,99 @@ async def handle_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not await guarded(update, runtime):
         return
     runtime.reset()
-    await reply_with_menu(update, "Reset выполнен: фоновые задачи остановлены, runtime/API state очищен, temp work очищен. Архивы exports и logs сохранены.", runtime)
+    await reply_with_menu(update, "Reset выполнен: фоновые задачи остановлены, runtime/MEXC API state очищен, temp work очищен. Gmail OAuth, архивы exports и logs сохранены.", runtime)
 
 
-async def send_archive_or_parts(context: ContextTypes.DEFAULT_TYPE, chat_id: int, zip_path: Path, runtime: BotRuntime) -> None:
+async def _prepare_gmail_archive_identity(
+    runtime: BotRuntime,
+    zip_path: Path,
+) -> ArchiveIdentity | None:
+    if not runtime.settings.gmail_auto_send_archives or not runtime.gmail.connected:
+        return None
+    try:
+        return await runtime.gmail.describe_archive(zip_path)
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.exception("Gmail pre-send archive validation failed file=%s: %s", zip_path.name, exc)
+        return None
+
+
+async def maybe_send_archive_to_gmail(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    zip_path: Path,
+    runtime: BotRuntime,
+    subject_prefix: str = "ChatGPT Scan",
+    *,
+    expected_identity: ArchiveIdentity | None,
+    telegram_filename: str,
+) -> None:
+    if not runtime.settings.gmail_auto_send_archives or not runtime.gmail.connected:
+        return
+    if expected_identity is None:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"⚠️ Gmail: {zip_path.name} не отправлен — не удалось зафиксировать SHA-256 ZIP до отправки в Telegram. "
+                "Это защита от отправки другого или повреждённого файла."
+            ),
+        )
+        return
+    try:
+        result = await runtime.gmail.send_archive(
+            zip_path,
+            subject_prefix=subject_prefix,
+            expected_identity=expected_identity,
+            telegram_filename=telegram_filename,
+        )
+        if result.get("duplicate_skipped"):
+            status = result.get("status") or "unknown"
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"♻️ Gmail: повторная отправка заблокирована ({status}): {zip_path.name}",
+            )
+            return
+        archive = result.get("archive") or {}
+        digest = str(archive.get("sha256") or expected_identity.sha256)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"📧 Архив отправлен один раз на {runtime.settings.gmail_send_to or runtime.gmail.account_email}: "
+                f"{zip_path.name}\n"
+                f"Gmail → Отправленные · SHA-256: {digest[:12]}…"
+            ),
+        )
+    except GmailAttachmentTooLarge as exc:
+        runtime.logger.warning("Gmail archive skipped, too large file=%s: %s", zip_path.name, exc)
+        await context.bot.send_message(chat_id=chat_id, text=f"⚠️ Gmail: архив не отправлен — {exc}")
+    except GmailArchiveChanged as exc:
+        runtime.logger.error("Gmail exact archive check failed file=%s: %s", zip_path.name, exc)
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ Gmail: отправка остановлена — {exc}")
+    except GmailSendUncertain as exc:
+        runtime.logger.error("Gmail archive send uncertain file=%s: %s", zip_path.name, exc)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"⚠️ Gmail: статус отправки {zip_path.name} неизвестен. Автоповтор заблокирован, чтобы не создать дубль. {exc}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.exception("Gmail archive send failed file=%s: %s", zip_path.name, exc)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"⚠️ Gmail: не удалось отправить {zip_path.name}: {exc}",
+        )
+
+
+async def send_archive_or_parts(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    zip_path: Path,
+    runtime: BotRuntime,
+    *,
+    email_archive: bool = True,
+    gmail_subject_prefix: str = "ChatGPT Scan",
+) -> None:
     limit_bytes = runtime.settings.telegram_send_limit_mb * 1024 * 1024
     size = zip_path.stat().st_size
+    gmail_identity = await _prepare_gmail_archive_identity(runtime, zip_path) if email_archive else None
     await context.bot.send_message(
         chat_id=chat_id,
         text=(
@@ -2069,7 +2387,22 @@ async def send_archive_or_parts(context: ContextTypes.DEFAULT_TYPE, chat_id: int
     if len(parts) == 1 and parts[0] == zip_path:
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
         with zip_path.open("rb") as f:
-            await context.bot.send_document(chat_id=chat_id, document=f, filename=zip_path.name)
+            sent_message = await context.bot.send_document(
+                chat_id=chat_id, document=f, filename=zip_path.name
+            )
+        telegram_filename = (
+            getattr(getattr(sent_message, "document", None), "file_name", None) or zip_path.name
+        )
+        if email_archive:
+            await maybe_send_archive_to_gmail(
+                context,
+                chat_id,
+                zip_path,
+                runtime,
+                gmail_subject_prefix,
+                expected_identity=gmail_identity,
+                telegram_filename=telegram_filename,
+            )
         return
 
     await context.bot.send_message(
@@ -2084,6 +2417,18 @@ async def send_archive_or_parts(context: ContextTypes.DEFAULT_TYPE, chat_id: int
         with part.open("rb") as f:
             await context.bot.send_document(chat_id=chat_id, document=f, filename=part.name)
         await asyncio.sleep(0.2)
+    if email_archive:
+        # Telegram received split parts, while Gmail receives the original logical ZIP
+        # whose exact name/hash were announced in the preceding Telegram message.
+        await maybe_send_archive_to_gmail(
+            context,
+            chat_id,
+            zip_path,
+            runtime,
+            gmail_subject_prefix,
+            expected_identity=gmail_identity,
+            telegram_filename=zip_path.name,
+        )
 
 
 async def handle_log_full(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2093,10 +2438,20 @@ async def handle_log_full(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         zip_path = build_logs_archive(runtime.settings, runtime.logger)
         await reply_with_menu(update, f"Log_full готов: {zip_path.name}, размер={human_bytes(zip_path.stat().st_size)}", runtime)
-        await send_archive_or_parts(context, update.effective_chat.id, zip_path, runtime)
+        await send_archive_or_parts(context, update.effective_chat.id, zip_path, runtime, email_archive=False)
     except Exception as exc:  # noqa: BLE001
         runtime.logger.exception("Log_full failed: %s", exc)
         await reply_with_menu(update, f"Log_full ошибка: {exc}", runtime)
+
+
+async def application_post_init(application: Application) -> None:
+    runtime: BotRuntime = application.bot_data["runtime"]
+    await runtime.gmail.start_web_server(application.bot)
+
+
+async def application_post_shutdown(application: Application) -> None:
+    runtime: BotRuntime = application.bot_data["runtime"]
+    await runtime.gmail.stop_web_server()
 
 
 def main() -> None:
@@ -2108,7 +2463,13 @@ def main() -> None:
         logger.warning("ADMIN_TELEGRAM_ID is empty/invalid. Bot will allow all users who know the token/chat. Set ADMIN_TELEGRAM_ID.")
 
     runtime = BotRuntime(settings, logger)
-    application = Application.builder().token(settings.telegram_bot_token).build()
+    application = (
+        Application.builder()
+        .token(settings.telegram_bot_token)
+        .post_init(application_post_init)
+        .post_shutdown(application_post_shutdown)
+        .build()
+    )
     application.bot_data["runtime"] = runtime
 
     application.add_handler(CommandHandler("start", start))
