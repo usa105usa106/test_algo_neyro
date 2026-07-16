@@ -14,25 +14,68 @@ services:
       - MEXC_BASE_URL=${MEXC_BASE_URL:-https://api.mexc.com}
       - MIN_COVERAGE_RATIO=${MIN_COVERAGE_RATIO:-0.80}
       - MIN_EFFECTIVE_DAYS=${MIN_EFFECTIVE_DAYS:-20}
-      - SECRET_ENCRYPTION_KEY=${SECRET_ENCRYPTION_KEY:-}
       - TZ=${TZ:-UTC}
 
-      # Google Client ID/Secret are entered through the Telegram admin chat
-      # and stored encrypted in the persistent volume.
+      # Stable Coolify-generated encryption key. It remains the same across redeploys.
+      - SERVICE_REALBASE64_32_GMAIL-STORE
 
-      # Coolify generates a public HTTPS URL and routes it to container port 8080.
-      # The generated value already includes /gmail/callback.
-      - SERVICE_URL_GMAIL-AUTH_8080=/gmail/callback
+      # The public domain is generated for gmail-auth-gateway below. The bot only
+      # needs the same FQDN to build the exact HTTPS redirect URI.
+      - SERVICE_FQDN_GMAIL-AUTH
 
-      # Fixed Gmail settings: no manual Coolify configuration required.
+      # Fixed Gmail settings: no manual Coolify variables are required.
       - GMAIL_AUTO_SEND_ARCHIVES=true
       - GMAIL_MAX_ATTACHMENT_MB=24
       - GMAIL_OAUTH_LISTEN_HOST=0.0.0.0
       - GMAIL_OAUTH_LISTEN_PORT=8080
     expose:
       - "8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     volumes:
       - chatgpt_scan_storage:/app/storage
+      - chatgpt_scan_storage_legacy:/app/legacy_storage:ro
+
+  gmail-auth-gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      chatgpt-scan-bot:
+        condition: service_healthy
+    environment:
+      # Coolify creates one public URL and routes it to this service's port 80.
+      # The URL value includes /gmail/callback and is reused by the bot through
+      # SERVICE_FQDN_GMAIL-AUTH.
+      - SERVICE_URL_GMAIL-AUTH=/gmail/callback
+    expose:
+      - "80"
+    configs:
+      - source: gmail_auth_nginx
+        target: /etc/nginx/conf.d/default.conf
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+configs:
+  gmail_auth_nginx:
+    file: ./gmail-auth-nginx.conf
 
 volumes:
   chatgpt_scan_storage:
+    # Global fixed name: survives redeploys and even recreation of the Coolify resource.
+    name: chatgpt_scan_storage
+  chatgpt_scan_storage_legacy:
+    # v61 and older used Compose's resource-prefixed volume. It is mounted read-only
+    # once so docker-entrypoint can migrate existing settings into the fixed volume.
+    name: "${COOLIFY_RESOURCE_UUID:-chatgpt-scan}_chatgpt_scan_storage"

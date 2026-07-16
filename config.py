@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-APP_VERSION = "61_1_full_GMAIL_HTTPS_REDIRECT_FIX"
+APP_VERSION = "62_full_GMAIL_GATEWAY_PORT_PERSISTENCE"
 
 
 def _normalize_callback_url(value: str) -> str:
@@ -55,6 +55,11 @@ def _resolve_gmail_redirect_uri() -> str:
         return _normalize_callback_url(explicit)
 
     for key in (
+        # v62: the public route belongs to the nginx gateway on port 80.
+        # The bot receives the matching generated FQDN and builds HTTPS itself.
+        "SERVICE_FQDN_GMAIL-AUTH",
+        "SERVICE_FQDN_GMAIL_AUTH",
+        # Backward compatibility with v60/v61 direct-to-8080 deployments.
         "SERVICE_URL_GMAIL-AUTH_8080",
         "SERVICE_URL_GMAIL_AUTH_8080",
         "GMAIL_PUBLIC_BASE_URL",
@@ -188,7 +193,12 @@ def load_settings() -> Settings:
         min_effective_days=float(os.getenv("MIN_EFFECTIVE_DAYS", "20")),
         intraday_scan_interval_sec=int(os.getenv("INTRADAY_SCAN_INTERVAL_SEC", "300")),
         intraday_days_back=max(30, int(os.getenv("INTRADAY_DAYS_BACK", "30"))),
-        secret_encryption_key=os.getenv("SECRET_ENCRYPTION_KEY", "").strip() or None,
+        secret_encryption_key=(
+            os.getenv("SECRET_ENCRYPTION_KEY", "").strip()
+            or os.getenv("GMAIL_STABLE_ENCRYPTION_KEY", "").strip()
+            or os.getenv("SERVICE_REALBASE64_32_GMAIL-STORE", "").strip()
+            or None
+        ),
         gmail_client_id=os.getenv("GMAIL_CLIENT_ID", "").strip(),
         gmail_client_secret=os.getenv("GMAIL_CLIENT_SECRET", "").strip(),
         gmail_redirect_uri=_resolve_gmail_redirect_uri(),

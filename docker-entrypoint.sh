@@ -2,6 +2,7 @@
 set -eu
 
 mkdir -p "${DATA_ROOT:-/app/storage}" /tmp/matplotlib
+python /app/storage_migrate.py
 
 if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
   echo "ERROR: TELEGRAM_BOT_TOKEN is empty. Set it in Coolify environment variables." >&2

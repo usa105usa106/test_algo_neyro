@@ -850,8 +850,9 @@ async def handle_gmail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if callback == "не создан Coolify":
         await query.message.reply_text(
-            "❌ Coolify ещё не создал публичный Gmail callback URL на порту 8080. "
-            "Проверь SERVICE_URL_GMAIL-AUTH_8080 и Redeploy.",
+            "❌ Coolify ещё не создал публичный Gmail callback URL. "
+            "В версии 62 домен должен автоматически создаваться сервисом gmail-auth-gateway. "
+            "Проверь его логи и сделай Redeploy.",
             reply_markup=main_menu(runtime),
         )
         return
@@ -897,7 +898,7 @@ async def handle_gmail_config(update: Update, context: ContextTypes.DEFAULT_TYPE
     callback = runtime.settings.gmail_redirect_uri
     if not callback:
         await update.callback_query.message.reply_text(
-            "❌ Coolify callback URL ещё не создан. Сначала Redeploy версии 61.",
+            "❌ Coolify callback URL ещё не создан. Сначала Redeploy версии 62.",
             reply_markup=main_menu(runtime),
         )
         return

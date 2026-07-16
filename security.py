@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 
 class SecretStore:
@@ -20,11 +22,46 @@ class SecretStore:
         self.gmail_sent_file = self.state_dir / "gmail_sent_archives.json"
         self.fernet = Fernet(self._load_or_create_key(env_key))
 
+    @staticmethod
+    def _coerce_fernet_key(value: str | bytes) -> bytes:
+        """Return a valid stable Fernet key from any non-empty secret.
+
+        Coolify's SERVICE_REALBASE64 value is normally already suitable. If a
+        Coolify version returns another Base64/random representation, deriving a
+        SHA-256 key keeps the result deterministic across redeploys.
+        """
+        raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("empty encryption key")
+        try:
+            Fernet(raw)
+            return raw
+        except Exception:
+            return base64.urlsafe_b64encode(hashlib.sha256(raw).digest())
+
     def _load_or_create_key(self, env_key: str | None) -> bytes:
-        if env_key:
-            return env_key.encode("utf-8")
+        old_key: bytes | None = None
         if self.key_file.exists():
-            return self.key_file.read_bytes().strip()
+            try:
+                old_key = self._coerce_fernet_key(self.key_file.read_bytes())
+            except Exception:
+                old_key = None
+
+        if env_key:
+            stable_key = self._coerce_fernet_key(env_key)
+            if old_key and old_key != stable_key:
+                self._migrate_encrypted_files(old_key, stable_key)
+            self.key_file.write_bytes(stable_key)
+            try:
+                self.key_file.chmod(0o600)
+            except Exception:
+                pass
+            return stable_key
+
+        if old_key:
+            return old_key
+
         key = Fernet.generate_key()
         self.key_file.write_bytes(key)
         try:
@@ -32,6 +69,38 @@ class SecretStore:
         except Exception:
             pass
         return key
+
+    def _migrate_encrypted_files(self, old_key: bytes, new_key: bytes) -> None:
+        """Re-encrypt v61 secrets with the v62 stable Coolify key atomically."""
+        old_fernet = Fernet(old_key)
+        new_fernet = Fernet(new_key)
+        for path in (self.api_file, self.gmail_file, self.gmail_client_file):
+            if not path.exists():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                token = str(data.get("encrypted") or "").encode("utf-8")
+                if not token:
+                    continue
+                # It may already have been migrated during an interrupted deploy.
+                try:
+                    new_fernet.decrypt(token)
+                    continue
+                except InvalidToken:
+                    pass
+                plaintext = old_fernet.decrypt(token)
+                data["encrypted"] = new_fernet.encrypt(plaintext).decode("utf-8")
+                self._atomic_write_json(path, data, mode=0o600)
+            except Exception:
+                # Never destroy an unreadable secret. Keep a copy for manual
+                # recovery and let the bot ask for credentials again if needed.
+                try:
+                    backup = path.with_suffix(path.suffix + ".unreadable-v62.bak")
+                    if not backup.exists():
+                        backup.write_bytes(path.read_bytes())
+                        backup.chmod(0o600)
+                except Exception:
+                    pass
 
     @staticmethod
     def mask(value: str) -> str:
@@ -62,9 +131,12 @@ class SecretStore:
     def _load_encrypted(self, path: Path) -> dict[str, Any] | None:
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
-        decrypted = self.fernet.decrypt(data["encrypted"].encode("utf-8"))
-        payload = json.loads(decrypted.decode("utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            decrypted = self.fernet.decrypt(data["encrypted"].encode("utf-8"))
+            payload = json.loads(decrypted.decode("utf-8"))
+        except Exception:
+            return None
         return payload if isinstance(payload, dict) else None
 
     def save_mexc_api(self, api_key: str, api_secret: str) -> dict:
@@ -110,7 +182,10 @@ class SecretStore:
     def load_gmail_client_mask(self) -> dict[str, str] | None:
         if not self.gmail_client_file.exists():
             return None
-        data = json.loads(self.gmail_client_file.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.gmail_client_file.read_text(encoding="utf-8"))
+        except Exception:
+            return None
         mask = data.get("mask")
         return mask if isinstance(mask, dict) else None
 
