@@ -17,9 +17,10 @@ services:
       - MIN_EFFECTIVE_DAYS=${MIN_EFFECTIVE_DAYS:-20}
       - TZ=${TZ:-UTC}
 
-      # Standard Coolify wildcard URL. The service listens on container port 80,
-      # so no custom port routing and no manual Domains field are required.
-      - SERVICE_URL_GMAIL-AUTH
+      # Explicit Coolify route to the callback listener's container port 80.
+      # The _80 suffix is internal routing metadata; users still receive a
+      # normal HTTPS URL without a visible custom port.
+      - SERVICE_URL_GMAIL-AUTH_80
 
       - GMAIL_AUTO_SEND_ARCHIVES=true
       - GMAIL_MAX_ATTACHMENT_MB=24

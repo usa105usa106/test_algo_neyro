@@ -25,5 +25,8 @@ RUN chmod +x /app/docker-entrypoint.sh \
 
 VOLUME ["/app/storage"]
 
+# Make the Gmail callback listener discoverable by Coolify/Traefik.
+EXPOSE 80
+
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["python", "run.py"]

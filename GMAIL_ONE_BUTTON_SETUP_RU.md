@@ -1,11 +1,11 @@
-# Gmail OAuth — версия 64
+# Gmail OAuth — версия 65
 
-Версия 64 убирает ручную работу с `/healthz`, портом `8080` и полем Domains в Coolify.
+Версия 65 убирает ручную работу с `/healthz`, портом `8080` и полем Domains в Coolify.
 
 ## Что делает бот сам
 
 - callback-сервер слушает стандартный внутренний порт `80`;
-- Coolify создаёт wildcard-URL через `SERVICE_URL_GMAIL-AUTH`;
+- Coolify создаёт wildcard-URL через `SERVICE_URL_GMAIL-AUTH_80`;
 - бот показывает готовый Redirect URI `/gmail/callback`;
 - бот показывает кнопку проверки сервера, а не заставляет вручную менять окончание ссылки;
 - ввод Client ID/Secret блокируется, пока публичный запрос реально не достиг бота;
@@ -41,7 +41,7 @@
 Coolify-маршрут создаётся переменной:
 
 ```text
-SERVICE_URL_GMAIL-AUTH
+SERVICE_URL_GMAIL-AUTH_80
 ```
 
 Google получает только HTTPS callback:
