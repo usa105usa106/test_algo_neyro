@@ -25,8 +25,12 @@ RUN chmod +x /app/docker-entrypoint.sh \
 
 VOLUME ["/app/storage"]
 
-# Internal only. Public HTTPS terminates on the isolated gateway service.
-EXPOSE 8080
+# Public HTTPS terminates at Coolify/Traefik and is forwarded here.
+# The Python callback server listens on the same container port.
+EXPOSE 80
+
+# Do not let an inherited image healthcheck suppress Traefik routing.
+HEALTHCHECK NONE
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["python", "run.py"]

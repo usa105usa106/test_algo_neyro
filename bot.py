@@ -2613,7 +2613,7 @@ async def handle_log_mail(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     chat_id=chat_id,
                     document=fh,
                     filename=report_path.name,
-                    caption="Пошаговый Gmail OAuth / gateway / callback лог.",
+                    caption="Пошаговый Gmail OAuth / route / callback лог.",
                 )
     except Exception as exc:  # noqa: BLE001
         runtime.logger.exception("Log_mail failed: %s", exc)

@@ -1,107 +1,56 @@
-# Coolify — версия 68
+# Coolify deployment — v70
 
-## Что исправлено
+## Причина предыдущего `no available server`
 
-Telegram-бот и публичный Gmail callback теперь разделены на два сервиса:
+В фактическом runtime `/log_mail` показал, что callback-сервер слушал `0.0.0.0:80`,
+а Dockerfile v69 объявлял `EXPOSE 8080`. Отдельный nginx gateway не был запущен,
+потому что ресурс разворачивался как обычное Dockerfile-приложение, а не как
+двухсервисный Compose stack.
 
-```text
-chatgpt-scan-bot     — исходный runtime бота, внутренний порт 8080
-gmail-auth-gateway   — отдельный nginx, публичный порт 80
-```
-
-У бота нет публичного Traefik-маршрута и нет Docker healthcheck. Поэтому проблема Gmail больше не может остановить Telegram polling, `/start`, `/ping`, сканеры или фоновые режимы.
-
-Coolify направляет внешний HTTPS только на `gmail-auth-gateway`. Gateway проксирует:
+## Текущая схема
 
 ```text
-/healthz         -> chatgpt-scan-bot:8080/healthz
-/gmail/callback  -> chatgpt-scan-bot:8080/gmail/callback
+Firefox / Google OAuth
+        | HTTPS :443
+        v
+Coolify / Traefik
+        | HTTP :80
+        v
+chatgpt-scan-bot
+        |- Telegram polling
+        |- GET /healthz
+        `- GET /gmail/callback
 ```
 
-Его собственный `/gateway-healthz` не зависит от запуска Telegram и используется Docker healthcheck.
+Контейнер и callback-сервер используют один и тот же порт `80`. Отдельного nginx
+gateway и отдельного gateway-healthcheck больше нет.
 
-## Обязательные переменные
+## Вариант A — Dockerfile build pack
 
-```env
-TELEGRAM_BOT_TOKEN=...
-ADMIN_TELEGRAM_ID=...
-```
+1. Port Exposes: `80`.
+2. Domain: HTTPS-домен приложения.
+3. Healthcheck path: `/healthz` либо healthcheck выключен.
+4. Полный Redeploy без кэша.
 
-Gmail Client ID и Client Secret вводятся через Telegram. Порт, домен и `GMAIL_PUBLIC_BASE_URL` вручную не задаются.
-
-## Coolify magic URL
-
-Gateway объявляет:
+Приложение автоматически читает `COOLIFY_URL` и строит:
 
 ```text
-SERVICE_URL_GMAILAUTH_80
+https://<domain>/healthz
+https://<domain>/gmail/callback
 ```
 
-Бот получает домен через:
+## Вариант B — Docker Compose build pack
 
-```text
-SERVICE_FQDN_GMAILAUTH
-```
+Compose содержит один сервис и magic variable `SERVICE_URL_GMAILAUTH_80`. Coolify
+создаёт HTTPS URL и направляет его на container port 80.
 
-И формирует:
+## Проверка
 
-```text
-https://<generated-domain>/healthz
-https://<generated-domain>/gmail/callback
-```
+1. `/start` и `/ping` отвечают.
+2. «Подключить Gmail» → «Проверить сервер».
+3. В браузере должен открыться JSON с `"ok": true`.
+4. `/log_mail` должен содержать `event=health_request_received`.
+5. Затем ввести Client ID и Client Secret и завершить Google OAuth.
 
-Идентификатор `GMAILAUTH` специально не содержит дефисов и подчёркиваний.
-
-## Deploy
-
-1. Загрузить архив версии 68 в существующий Docker Compose resource.
-2. Сделать полный Redeploy/Rebuild.
-3. Убедиться, что запущены оба сервиса:
-   - `chatgpt-scan-bot`
-   - `gmail-auth-gateway`
-4. В Telegram проверить `/start` и `/ping`.
-5. Нажать `📧 Подключить Gmail` и открыть новую кнопку проверки сервера.
-6. В браузере должен появиться JSON с `"ok": true` и `"probe_confirmed": true`.
-7. В Google OAuth Client добавить новый Redirect URI, который покажет бот.
-
-Старую ссылку проверки и старый Redirect URI использовать нельзя: после смены magic identifier публичный домен изменится.
-
-## Сертификат
-
-TLS завершается в Coolify/Traefik. Контейнеры внутри общаются по HTTP. Архив не устанавливает сертификат вручную.
-
-При корректной работе Coolify ссылка открывается без предупреждения браузера. Если всё ещё показывается самоподписанный сертификат, это уже проблема ACME/Traefik на VPS: должны быть доступны входящие порты 80 и 443, а proxy должен успешно выпустить сертификат для нового generated domain.
-
-## Хранилища
-
-Основное:
-
-```text
-/data/chatgpt-scan-bot-storage -> /app/storage
-```
-
-Резервное:
-
-```text
-chatgpt_scan_storage -> /app/storage_backup
-```
-
-Существующие Gmail credentials, token и журнал отправленных ZIP сохраняются.
-
-## Ожидаемые логи бота
-
-```text
-v69 primary storage: /app/storage
-v69 backup storage: /app/storage_backup
-v69 OAuth listen: 0.0.0.0:8080
-v69 Gmail public FQDN: <generated-domain>
-Bot started. Version: 69_full_GMAIL_LOG_MAIL_DIAGNOSTICS
-```
-
-## Gmail diagnostic command — v69
-
-После Redeploy команда `/log_mail` отправляет отдельный диагностический TXT.
-Он объединяет безопасный журнал самого OAuth-сервера и nginx gateway.
-
-Для gateway используется volume `gmail_mail_logs`. В query string находятся одноразовые
-OAuth/probe значения, поэтому gateway намеренно пишет только `$uri`, без `$args` и `$request_uri`.
+Если снова показан `no available server`, в Coolify проверить, что текущая версия
+действительно собрана без кэша, Port Exposes равен `80`, а старый контейнер остановлен.

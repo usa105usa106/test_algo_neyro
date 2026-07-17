@@ -1,4 +1,5 @@
-# port: 80
+# Gmail callback and Telegram bot run in one container.
+# Coolify/Traefik terminates HTTPS and forwards to container port 80.
 services:
   chatgpt-scan-bot:
     build:
@@ -19,50 +20,22 @@ services:
       - MIN_EFFECTIVE_DAYS=${MIN_EFFECTIVE_DAYS:-20}
       - TZ=${TZ:-UTC}
 
-      # Reuse the FQDN generated for gmail-auth-gateway. The bot itself is not
-      # exposed by Traefik and has no Docker healthcheck, so Gmail routing can
-      # never block Telegram polling or the other modes.
-      - SERVICE_FQDN_GMAILAUTH
+      # Coolify generates one public HTTPS URL and routes it directly to this
+      # service's container port 80. The application reads the same URL.
+      - SERVICE_URL_GMAILAUTH_80
       - GMAIL_AUTO_SEND_ARCHIVES=true
       - GMAIL_MAX_ATTACHMENT_MB=24
       - GMAIL_OAUTH_LISTEN_HOST=0.0.0.0
-      - GMAIL_OAUTH_LISTEN_PORT=8080
+      - GMAIL_OAUTH_LISTEN_PORT=80
     expose:
-      - "8080"
+      - "80"
     volumes:
       - type: bind
         source: /data/chatgpt-scan-bot-storage
         target: /app/storage
         is_directory: true
       - chatgpt_scan_storage:/app/storage_backup
-      - gmail_mail_logs:/app/storage/gateway_logs:ro
-
-  gmail-auth-gateway:
-    image: nginx:alpine
-    restart: unless-stopped
-    depends_on:
-      - chatgpt-scan-bot
-    environment:
-      # Coolify creates one HTTPS domain and routes it to this service's
-      # standard container port 80. Identifier contains no underscore/hyphen
-      # ambiguity and follows Coolify's documented magic-variable pattern.
-      - SERVICE_URL_GMAILAUTH_80
-    expose:
-      - "80"
-    volumes:
-      - ./gmail-gateway.conf:/etc/nginx/conf.d/default.conf:ro
-      - gmail_mail_logs:/var/log/gmail
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - "wget -q -O /dev/null http://127.0.0.1/gateway-healthz || exit 1"
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
 
 volumes:
   chatgpt_scan_storage:
     name: chatgpt_scan_storage
-  gmail_mail_logs:
-    name: gmail_mail_logs

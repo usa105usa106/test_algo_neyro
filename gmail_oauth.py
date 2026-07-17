@@ -179,9 +179,7 @@ class GmailOAuthManager:
                 "recovered_from_backup": storage.get("recovered_from_backup"),
             },
             "mail_log_path": str(self.mail_log_path),
-            "gateway_log_dir": str(
-                Path(getattr(self.settings, "data_root", Path(self.secret_store.state_dir).parent)) / "gateway_logs"
-            ),
+            "routing_mode": "direct_container_port_80",
         }
 
     def build_diagnostic_report(self, chat_id: int | None = None) -> Path:
@@ -220,34 +218,14 @@ class GmailOAuthManager:
         if used == 0:
             sections.append("No Gmail events have been written yet.")
 
-        sections.extend(["", "GATEWAY LOG (query strings are disabled)", "=" * 72])
-        gateway_dir = Path(getattr(self.settings, "data_root", Path(self.secret_store.state_dir).parent)) / "gateway_logs"
-        gateway_files = [
-            gateway_dir / "mail_gateway_access.log",
-            gateway_dir / "mail_gateway_error.log",
-        ]
-        gateway_used = 0
-        gateway_limit = 8 * 1024 * 1024
-        for gateway_file in gateway_files:
-            if not gateway_file.is_file():
-                continue
-            data = gateway_file.read_bytes()
-            remaining = gateway_limit - gateway_used
-            if remaining <= 0:
-                sections.append("[gateway log output truncated at 8 MB]")
-                break
-            if len(data) > remaining:
-                data = data[-remaining:]
-                sections.append(f"\n--- {gateway_file.name} (tail; truncated) ---")
-            else:
-                sections.append(f"\n--- {gateway_file.name} ---")
-            sections.append(data.decode("utf-8", errors="replace"))
-            gateway_used += min(len(data), remaining)
-        if gateway_used == 0:
-            sections.append(
-                "Gateway log files are not available yet. After deploy, this usually means the gateway has not received "
-                "a /healthz or /gmail/callback request, or its shared log volume is not mounted."
-            )
+        sections.extend([
+            "",
+            "ROUTING",
+            "=" * 72,
+            "Mode: direct Coolify/Traefik route to the bot container on port 80.",
+            "There is no separate nginx gateway in v70.",
+            "A browser request that reaches the application is recorded above as event=health_request_received or event=oauth_callback_received.",
+        ])
         report_path.write_text("\n".join(sections).rstrip() + "\n", encoding="utf-8")
         self._audit("diagnostic_report_built", chat_id=chat_id, filename=report_path.name, size=report_path.stat().st_size)
         return report_path

@@ -12,9 +12,9 @@ if [ -z "${ADMIN_TELEGRAM_ID:-}" ]; then
   echo "WARNING: ADMIN_TELEGRAM_ID is empty. Bot will allow all users who know the bot token." >&2
 fi
 
-printf 'v69 primary storage: %s\n' "${DATA_ROOT:-/app/storage}"
-printf 'v69 backup storage: %s\n' "${GMAIL_BACKUP_ROOT:-/app/storage_backup}"
-printf 'v69 OAuth listen: %s:%s\n' "${GMAIL_OAUTH_LISTEN_HOST:-0.0.0.0}" "${GMAIL_OAUTH_LISTEN_PORT:-8080}"
-printf 'v69 Gmail public FQDN: %s\n' "${SERVICE_FQDN_GMAILAUTH:-<missing>}"
+printf 'v70 primary storage: %s\n' "${DATA_ROOT:-/app/storage}"
+printf 'v70 backup storage: %s\n' "${GMAIL_BACKUP_ROOT:-/app/storage_backup}"
+printf 'v70 OAuth listen: %s:%s\n' "${GMAIL_OAUTH_LISTEN_HOST:-0.0.0.0}" "${GMAIL_OAUTH_LISTEN_PORT:-80}"
+printf 'v70 Gmail public URL: %s\n' "${SERVICE_URL_GMAILAUTH_80:-${COOLIFY_URL:-<missing>}}"
 
 exec "$@"
