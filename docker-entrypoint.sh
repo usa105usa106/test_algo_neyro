@@ -12,30 +12,23 @@ if [ -z "${ADMIN_TELEGRAM_ID:-}" ]; then
   echo "WARNING: ADMIN_TELEGRAM_ID is empty. Bot will allow all users who know the bot token." >&2
 fi
 
-printf 'v66 primary storage: %s\n' "${DATA_ROOT:-/app/storage}"
-printf 'v66 backup storage: %s\n' "${GMAIL_BACKUP_ROOT:-/app/storage_backup}"
-printf 'v66 OAuth listen: %s:%s\n' "${GMAIL_OAUTH_LISTEN_HOST:-0.0.0.0}" "${GMAIL_OAUTH_LISTEN_PORT:-8080}"
+printf 'v67 primary storage: %s\n' "${DATA_ROOT:-/app/storage}"
+printf 'v67 backup storage: %s\n' "${GMAIL_BACKUP_ROOT:-/app/storage_backup}"
+printf 'v67 OAuth listen: %s:%s\n' "${GMAIL_OAUTH_LISTEN_HOST:-0.0.0.0}" "${GMAIL_OAUTH_LISTEN_PORT:-8080}"
 env | grep '^SERVICE_URL_GMAIL' | sed 's/=.*$/=<generated>/' || true
 
+# Gmail routing must never prevent the Telegram bot and its other modes from
+# starting. Start nginx best-effort, then replace PID 1 with the bot process.
+# Docker/Coolify healthcheck independently decides whether Traefik may route
+# Gmail HTTP traffic to port 80.
+if nginx -t -c /app/nginx.conf; then
+  if nginx -c /app/nginx.conf; then
+    echo "v67 Gmail router started on container port 80"
+  else
+    echo "WARNING: Gmail router failed to start; Telegram bot will continue without public Gmail callback." >&2
+  fi
+else
+  echo "WARNING: Gmail router config check failed; Telegram bot will continue without public Gmail callback." >&2
+fi
 
-nginx -t -c /app/nginx.conf
-nginx -c /app/nginx.conf
-
-# Fail fast if the stable port-80 router did not start.
-python -c "import urllib.request; o=urllib.request.build_opener(urllib.request.ProxyHandler({})); o.open('http://127.0.0.1/router-healthz', timeout=3).read()"
-
-"$@" &
-app_pid=$!
-
-shutdown() {
-  kill -TERM "$app_pid" 2>/dev/null || true
-  nginx -s quit -c /app/nginx.conf 2>/dev/null || true
-}
-trap shutdown INT TERM
-
-set +e
-wait "$app_pid"
-status=$?
-set -e
-nginx -s quit -c /app/nginx.conf 2>/dev/null || true
-exit "$status"
+exec "$@"
