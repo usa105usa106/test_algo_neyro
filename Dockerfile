@@ -29,8 +29,10 @@ VOLUME ["/app/storage"]
 # The Python callback server listens on the same container port.
 EXPOSE 80
 
-# Do not let an inherited image healthcheck suppress Traefik routing.
-HEALTHCHECK NONE
+# Real Docker healthcheck. Coolify waits for Docker's .State.Health.Status
+# during rolling updates, so the healthcheck must create a real status.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=10 \
+    CMD python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:80/healthz', timeout=3); raise SystemExit(0 if r.status == 200 else 1)"
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["python", "run.py"]

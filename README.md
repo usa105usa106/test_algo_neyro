@@ -401,8 +401,8 @@ INTRADAY_DAYS_BACK=30
 ## Gmail OAuth — версия 68
 
 - Runtime Telegram-бота возвращён к рабочей v64 и больше не содержит nginx или Gmail healthcheck.
-- Публичный HTTPS callback Coolify/Traefik направляет прямо в контейнер бота на порт `80`.
-- Telegram polling и Gmail callback работают в одном Python-процессе, но callback-сервер запускается как отдельная async-задача и не меняет сканеры/task.
+- Публичный HTTPS callback обслуживает отдельный `gmail-auth-gateway` на порту 80.
+- Бот слушает OAuth только внутри Compose-сети на `8080`, поэтому сбой почтового маршрута не блокирует `/start`, `/ping` и остальные режимы.
 - Coolify URL создаётся через `SERVICE_URL_GMAILAUTH_80`, а бот получает тот же домен через `SERVICE_FQDN_GMAILAUTH`.
 - Gmail-настройки сохраняются в прежнем bind-хранилище и резервном Docker volume.
 - ZIP отправляется в Gmail только после Telegram, с проверкой имени, размера, SHA-256 и защитой от дублей.
@@ -411,6 +411,6 @@ INTRADAY_DAYS_BACK=30
 
 ### `/log_mail`
 
-Отдельный пошаговый отчёт подключения Gmail: Coolify route, `/healthz`, OAuth callback,
+Отдельный пошаговый отчёт подключения Gmail: Coolify gateway, `/healthz`, OAuth callback,
 token exchange, userinfo, сохранение подключения и тестовая отправка. Секреты, OAuth-коды
 и токены в файл не записываются. Команда полезна сразу после ошибки подключения.
