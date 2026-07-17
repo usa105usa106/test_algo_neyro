@@ -46,6 +46,7 @@ from security import SecretStore
 
 BTN_API = "api"
 BTN_LOG_FULL = "log_full"
+BTN_LOG_MAIL = "log_mail"
 BTN_RESET = "reset"
 BTN_PING = "ping"
 BTN_SYMBOLS_CHECK = "symbols_check"
@@ -652,7 +653,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Montage OFF по умолчанию. Montage ON: один montage-график на актив без parquet + swing task LONG/SHORT.\n\n"
         "Старые тяжёлые research-кнопки убраны.\n"
         "Stress Test 2: MEXC Futures 30d parquet по 8 активам, с пропуском проблемных символов.\n"
-        "Служебные: /help, /api, /log_full, /ping, /reset.\n\n"
+        "Служебные: /help, /api, /log_full, /log_mail, /ping, /reset.\n\n"
         f"{api_text}\n"
         f"Montage: {'ON' if runtime.montage_enabled else 'OFF'}\n"
         f"Intraday: {'ON' if runtime.intraday_enabled else 'OFF'} — {_symbols_short_list(runtime.intraday_symbols)}\n"
@@ -700,6 +701,7 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "Служебные команды:\n"
         "• /api — сохранить MEXC API key/secret для meta/status.\n"
         "• /log_full — скачать полный лог процесса.\n"
+        "• /log_mail — скачать отдельный пошаговый лог подключения Gmail без Client Secret, OAuth code и токенов.\n"
         "• /ping — версия, uptime, RAM/CPU/disk.\n"
         "• /reset — остановить фоновые задачи и очистить temp-state.\n"
         "• /status — debug-статус.\n\n"
@@ -835,6 +837,12 @@ async def handle_gmail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     runtime: BotRuntime = context.application.bot_data["runtime"]
     if not await guarded(update, runtime):
         return
+    runtime.gmail.audit_event(
+        "telegram_gmail_menu_opened",
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        connected=runtime.gmail.connected,
+        configured=runtime.gmail.configured,
+    )
     query = update.callback_query
     chat = update.effective_chat
     if not query or not chat:
@@ -952,6 +960,10 @@ async def handle_gmail_check(update: Update, context: ContextTypes.DEFAULT_TYPE)
     runtime: BotRuntime = context.application.bot_data["runtime"]
     if not await guarded(update, runtime):
         return
+    runtime.gmail.audit_event(
+        "telegram_health_probe_result_requested",
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+    )
     query = update.callback_query
     chat = update.effective_chat
     if not query or not chat:
@@ -990,6 +1002,11 @@ async def handle_gmail_config(update: Update, context: ContextTypes.DEFAULT_TYPE
     runtime: BotRuntime = context.application.bot_data["runtime"]
     if not await guarded(update, runtime):
         return
+    runtime.gmail.audit_event(
+        "telegram_client_credentials_setup_requested",
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        user_id=update.effective_user.id if update.effective_user else None,
+    )
     user = update.effective_user
     chat = update.effective_chat
     query = update.callback_query
@@ -1158,6 +1175,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         try:
             client_id = runtime.gmail.validate_client_id(text)
         except GmailOAuthError as exc:
+            runtime.gmail.audit_event(
+                "telegram_client_id_rejected",
+                chat_id=update.effective_chat.id if update.effective_chat else None,
+                deleted_from_telegram=deleted,
+                error=str(exc),
+            )
             warning = "" if deleted else "\n⚠️ Не удалось удалить исходное сообщение; удали его вручную."
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -1166,6 +1189,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         state["gmail_client_id"] = client_id
         state["step"] = "gmail_client_secret"
+        runtime.gmail.audit_event(
+            "telegram_client_id_accepted",
+            chat_id=update.effective_chat.id if update.effective_chat else None,
+            deleted_from_telegram=deleted,
+            client_id_mask=f"{client_id[:8]}...{client_id[-28:]}",
+        )
         warning = "" if deleted else "\n⚠️ Не удалось удалить сообщение с Client ID; удали его вручную."
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -1180,6 +1209,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         try:
             mask = runtime.gmail.save_client_credentials(client_id, text)
         except GmailOAuthError as exc:
+            runtime.gmail.audit_event(
+                "telegram_client_secret_rejected",
+                chat_id=update.effective_chat.id if update.effective_chat else None,
+                deleted_from_telegram=deleted,
+                error=str(exc),
+            )
             warning = "" if deleted else "\n⚠️ Не удалось удалить исходное сообщение; удали его вручную."
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -1187,6 +1222,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
         runtime.awaiting_api_step.pop(user.id, None)
+        runtime.gmail.audit_event(
+            "telegram_client_credentials_saved",
+            chat_id=update.effective_chat.id if update.effective_chat else None,
+            deleted_from_telegram=deleted,
+            client_id_mask=mask.get("client_id"),
+        )
         try:
             authorization_url = runtime.gmail.create_authorization_url(update.effective_chat.id)
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔐 Войти через Google", url=authorization_url)]])
@@ -2547,6 +2588,39 @@ async def handle_log_full(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await reply_with_menu(update, f"Log_full ошибка: {exc}", runtime)
 
 
+async def handle_log_mail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    runtime: BotRuntime = context.application.bot_data["runtime"]
+    if not await guarded(update, runtime):
+        return
+    chat = update.effective_chat
+    chat_id = chat.id if chat else None
+    runtime.gmail.audit_event("telegram_log_mail_requested", chat_id=chat_id)
+    try:
+        report_path = await asyncio.to_thread(runtime.gmail.build_diagnostic_report, chat_id)
+        snapshot = runtime.gmail.diagnostic_snapshot(chat_id)
+        summary = (
+            f"Log_mail готов: {report_path.name}, размер={human_bytes(report_path.stat().st_size)}\n"
+            f"Gmail: {snapshot['status']}\n"
+            f"Локальный callback-сервер: {'STARTED' if snapshot['local_server_started'] else 'NOT STARTED'} \n"
+            f"Публичная проверка для этого чата: "
+            f"{'CONFIRMED' if snapshot['health_probe_confirmed_for_chat'] else 'NOT CONFIRMED'}\n"
+            "В файле нет Client Secret, authorization code, access token и refresh token."
+        )
+        await reply_with_menu(update, summary, runtime)
+        if chat_id is not None:
+            with report_path.open("rb") as fh:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=fh,
+                    filename=report_path.name,
+                    caption="Пошаговый Gmail OAuth / gateway / callback лог.",
+                )
+    except Exception as exc:  # noqa: BLE001
+        runtime.logger.exception("Log_mail failed: %s", exc)
+        runtime.gmail.audit_event("telegram_log_mail_failed", chat_id=chat_id, error=repr(exc))
+        await reply_with_menu(update, f"Log_mail ошибка: {exc}", runtime)
+
+
 async def application_post_init(application: Application) -> None:
     runtime: BotRuntime = application.bot_data["runtime"]
     await runtime.gmail.start_web_server(application.bot)
@@ -2580,6 +2654,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", handle_help))
     application.add_handler(CommandHandler("api", start_api_flow))
     application.add_handler(CommandHandler("log_full", handle_log_full))
+    application.add_handler(CommandHandler("log_mail", handle_log_mail))
     application.add_handler(CommandHandler("ping", handle_ping))
     application.add_handler(CommandHandler("reset", handle_reset))
     application.add_handler(CommandHandler("cancel", cancel))

@@ -4,12 +4,15 @@ import asyncio
 import base64
 import hashlib
 import html
+import json
 import logging
 import mimetypes
 import re
 import secrets
 import time
 import zipfile
+from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from dataclasses import asdict, dataclass
 from email.message import EmailMessage
 from pathlib import Path
@@ -77,6 +80,177 @@ class GmailOAuthManager:
         self._site: web.TCPSite | None = None
         self._bot: Any | None = None
         self._send_lock = asyncio.Lock()
+        logs_dir = Path(getattr(self.settings, "logs_dir", Path(self.secret_store.state_dir).parent / "logs"))
+        self.mail_log_path = logs_dir / "mail.log"
+        self._mail_logger = self._build_mail_logger(self.mail_log_path)
+        self._audit(
+            "manager_initialized",
+            app_version=str(getattr(self.settings, "app_version", "unknown")),
+            redirect_uri=str(getattr(self.settings, "gmail_redirect_uri", "") or "missing"),
+            health_url=str(getattr(self.settings, "gmail_health_url", "") or "missing"),
+            listen_host=str(getattr(self.settings, "gmail_oauth_listen_host", "")),
+            listen_port=int(getattr(self.settings, "gmail_oauth_listen_port", 0) or 0),
+            client_source=self.client_source,
+            configured=self.configured,
+            connected=self.connected,
+        )
+
+    @staticmethod
+    def _build_mail_logger(path: Path) -> logging.Logger:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        logger_name = f"gmail_connection_{hashlib.sha256(str(path.resolve()).encode('utf-8')).hexdigest()[:12]}"
+        audit_logger = logging.getLogger(logger_name)
+        audit_logger.setLevel(logging.INFO)
+        audit_logger.handlers.clear()
+        audit_logger.propagate = False
+        handler = RotatingFileHandler(
+            path, maxBytes=10 * 1024 * 1024, backupCount=4, encoding="utf-8"
+        )
+        handler.setFormatter(logging.Formatter(
+            fmt="%(asctime)s | %(levelname)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        ))
+        audit_logger.addHandler(handler)
+        return audit_logger
+
+    @staticmethod
+    def _fingerprint(value: str) -> str:
+        if not value:
+            return "none"
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+    @staticmethod
+    def _safe_field(value: Any) -> Any:
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        if isinstance(value, (list, tuple, set)):
+            return [GmailOAuthManager._safe_field(item) for item in value]
+        if isinstance(value, dict):
+            return {str(k): GmailOAuthManager._safe_field(v) for k, v in value.items()}
+        text = str(value).replace("\r", " ").replace("\n", " ")
+        return text[:2000]
+
+    def _audit(self, event: str, *, level: int = logging.INFO, **fields: Any) -> None:
+        safe_fields = {key: self._safe_field(value) for key, value in fields.items()}
+        payload = json.dumps(safe_fields, ensure_ascii=False, sort_keys=True)
+        message = f"event={event} | {payload}"
+        self._mail_logger.log(level, message)
+        self.logger.log(level, "MAIL %s", message)
+
+    def audit_event(self, event: str, **fields: Any) -> None:
+        self._audit(event, **fields)
+
+    def diagnostic_snapshot(self, chat_id: int | None = None) -> dict[str, Any]:
+        token = self.secret_store.load_gmail_oauth() or {}
+        connected_at = float(token.get("connected_at") or 0)
+        expires_at = float(token.get("expires_at") or 0)
+        storage = self.secret_store.storage_status()
+        confirmed = self.is_health_probe_confirmed(chat_id) if chat_id is not None else None
+        return {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "app_version": str(getattr(self.settings, "app_version", "unknown")),
+            "status": self.status_text(),
+            "configured": self.configured,
+            "connected": self.connected,
+            "client_source": self.client_source,
+            "account_email": self.account_email,
+            "public_base_url": str(getattr(self.settings, "gmail_public_base_url", "") or ""),
+            "redirect_uri": str(getattr(self.settings, "gmail_redirect_uri", "") or ""),
+            "health_url": str(getattr(self.settings, "gmail_health_url", "") or ""),
+            "listen_host": str(getattr(self.settings, "gmail_oauth_listen_host", "")),
+            "listen_port": int(getattr(self.settings, "gmail_oauth_listen_port", 0) or 0),
+            "local_server_started": self._runner is not None and self._site is not None,
+            "telegram_bot_attached": self._bot is not None,
+            "pending_oauth_states": len(self._pending_states),
+            "pending_health_probes": len(self._health_probes),
+            "health_probe_confirmed_for_chat": confirmed,
+            "oauth_token_file_present": bool(token),
+            "refresh_token_present": bool(token.get("refresh_token")),
+            "access_token_present": bool(token.get("access_token")),
+            "token_expires_in_sec": int(expires_at - time.time()) if expires_at else None,
+            "granted_scope": str(token.get("scope") or ""),
+            "connected_at_utc": datetime.fromtimestamp(connected_at, timezone.utc).isoformat() if connected_at else None,
+            "auto_send_archives": bool(getattr(self.settings, "gmail_auto_send_archives", False)),
+            "send_to": str(getattr(self.settings, "gmail_send_to", "") or self.account_email or ""),
+            "storage": {
+                "storage_id": storage.get("storage_id"),
+                "boot_count": storage.get("boot_count"),
+                "backup_bundle_ok": storage.get("backup_bundle_ok"),
+                "recovered_from_backup": storage.get("recovered_from_backup"),
+            },
+            "mail_log_path": str(self.mail_log_path),
+            "gateway_log_dir": str(
+                Path(getattr(self.settings, "data_root", Path(self.secret_store.state_dir).parent)) / "gateway_logs"
+            ),
+        }
+
+    def build_diagnostic_report(self, chat_id: int | None = None) -> Path:
+        exports_dir = Path(getattr(self.settings, "exports_dir", Path(self.secret_store.state_dir).parent / "exports"))
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        report_path = exports_dir / f"gmail_connection_log_{stamp}.txt"
+        snapshot = self.diagnostic_snapshot(chat_id)
+        sections = [
+            "GMAIL CONNECTION DIAGNOSTIC (secrets/tokens/codes are not included)",
+            "=" * 72,
+            json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True),
+            "",
+            "EVENT LOG (oldest rotated file first)",
+            "=" * 72,
+        ]
+        log_files = [self.mail_log_path.with_name(f"{self.mail_log_path.name}.{idx}") for idx in range(4, 0, -1)]
+        log_files.append(self.mail_log_path)
+        total_limit = 8 * 1024 * 1024
+        used = 0
+        for log_file in log_files:
+            if not log_file.is_file():
+                continue
+            data = log_file.read_bytes()
+            remaining = total_limit - used
+            if remaining <= 0:
+                sections.append("[log output truncated at 8 MB]")
+                break
+            if len(data) > remaining:
+                data = data[-remaining:]
+                sections.append(f"\n--- {log_file.name} (tail; truncated) ---")
+            else:
+                sections.append(f"\n--- {log_file.name} ---")
+            sections.append(data.decode("utf-8", errors="replace"))
+            used += min(len(data), remaining)
+        if used == 0:
+            sections.append("No Gmail events have been written yet.")
+
+        sections.extend(["", "GATEWAY LOG (query strings are disabled)", "=" * 72])
+        gateway_dir = Path(getattr(self.settings, "data_root", Path(self.secret_store.state_dir).parent)) / "gateway_logs"
+        gateway_files = [
+            gateway_dir / "mail_gateway_access.log",
+            gateway_dir / "mail_gateway_error.log",
+        ]
+        gateway_used = 0
+        gateway_limit = 8 * 1024 * 1024
+        for gateway_file in gateway_files:
+            if not gateway_file.is_file():
+                continue
+            data = gateway_file.read_bytes()
+            remaining = gateway_limit - gateway_used
+            if remaining <= 0:
+                sections.append("[gateway log output truncated at 8 MB]")
+                break
+            if len(data) > remaining:
+                data = data[-remaining:]
+                sections.append(f"\n--- {gateway_file.name} (tail; truncated) ---")
+            else:
+                sections.append(f"\n--- {gateway_file.name} ---")
+            sections.append(data.decode("utf-8", errors="replace"))
+            gateway_used += min(len(data), remaining)
+        if gateway_used == 0:
+            sections.append(
+                "Gateway log files are not available yet. After deploy, this usually means the gateway has not received "
+                "a /healthz or /gmail/callback request, or its shared log volume is not mounted."
+            )
+        report_path.write_text("\n".join(sections).rstrip() + "\n", encoding="utf-8")
+        self._audit("diagnostic_report_built", chat_id=chat_id, filename=report_path.name, size=report_path.stat().st_size)
+        return report_path
 
     @staticmethod
     def validate_client_id(value: str) -> str:
@@ -104,11 +278,13 @@ class GmailOAuthManager:
         self.secret_store.clear_gmail_oauth()
         mask = self.secret_store.save_gmail_client(client_id, client_secret)
         self.logger.info("Google OAuth client saved via Telegram client_id_mask=%s", mask.get("client_id"))
+        self._audit("client_credentials_saved", client_id_mask=mask.get("client_id"), previous_oauth_token_cleared=True)
         return mask
 
     def clear_client_credentials(self) -> None:
         self.secret_store.clear_gmail_oauth()
         self.secret_store.clear_gmail_client()
+        self._audit("client_credentials_cleared")
 
     def _client_credentials(self) -> tuple[str, str, str]:
         stored = self.secret_store.load_gmail_client() or {}
@@ -165,6 +341,13 @@ class GmailOAuthManager:
             "chat_id": int(chat_id),
             "expires_at": time.time() + 15 * 60,
         }
+        self._audit(
+            "health_probe_created",
+            chat_id=int(chat_id),
+            probe_id=self._fingerprint(token),
+            health_url=health_url,
+            expires_in_sec=15 * 60,
+        )
         separator = "&" if "?" in health_url else "?"
         return f"{health_url}{separator}{urlencode({'probe': token})}"
 
@@ -173,7 +356,9 @@ class GmailOAuthManager:
         return confirmed_at > 0 and (time.time() - confirmed_at) <= max_age_sec
 
     def require_health_probe(self, chat_id: int) -> None:
-        if not self.is_health_probe_confirmed(chat_id):
+        confirmed = self.is_health_probe_confirmed(chat_id)
+        self._audit("health_probe_requirement_checked", chat_id=int(chat_id), confirmed=confirmed)
+        if not confirmed:
             raise GmailOAuthError(
                 "Публичный callback ещё не подтверждён. Открой кнопку «Проверить сервер», "
                 "вернись в Telegram и нажми «Проверить результат»."
@@ -192,6 +377,14 @@ class GmailOAuthManager:
             "chat_id": int(chat_id),
             "expires_at": time.time() + 15 * 60,
         }
+        self._audit(
+            "authorization_url_created",
+            chat_id=int(chat_id),
+            state_id=self._fingerprint(state),
+            redirect_uri=self.settings.gmail_redirect_uri,
+            client_source=self.client_source,
+            scopes=OAUTH_SCOPES,
+        )
         params = {
             "client_id": client_id,
             "redirect_uri": self.settings.gmail_redirect_uri,
@@ -205,11 +398,21 @@ class GmailOAuthManager:
         return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
     def disconnect(self) -> None:
+        previous_email = self.account_email
         self.secret_store.clear_gmail_oauth()
+        self._audit("gmail_disconnected", previous_email=previous_email)
 
     async def start_web_server(self, bot: Any) -> None:
         self._bot = bot
+        self._audit(
+            "local_server_start_requested",
+            listen_host=self.settings.gmail_oauth_listen_host,
+            listen_port=self.settings.gmail_oauth_listen_port,
+            redirect_uri=self.settings.gmail_redirect_uri or "missing",
+            health_url=getattr(self.settings, "gmail_health_url", "") or "missing",
+        )
         if self._runner is not None:
+            self._audit("local_server_already_started")
             return
         # Always start the local server. In older versions a missing Coolify URL
         # prevented the listener from starting at all, which made the proxy show
@@ -232,7 +435,24 @@ class GmailOAuthManager:
             host=self.settings.gmail_oauth_listen_host,
             port=self.settings.gmail_oauth_listen_port,
         )
-        await self._site.start()
+        try:
+            await self._site.start()
+        except Exception as exc:
+            self._audit(
+                "local_server_start_failed",
+                level=logging.ERROR,
+                error=repr(exc),
+                listen_host=self.settings.gmail_oauth_listen_host,
+                listen_port=self.settings.gmail_oauth_listen_port,
+            )
+            raise
+        self._audit(
+            "local_server_started",
+            listen_host=self.settings.gmail_oauth_listen_host,
+            listen_port=self.settings.gmail_oauth_listen_port,
+            redirect_uri=self.settings.gmail_redirect_uri or "missing",
+            health_url=getattr(self.settings, "gmail_health_url", "") or "missing",
+        )
         self.logger.info(
             "Gmail OAuth server started on %s:%s redirect=%s health=%s",
             self.settings.gmail_oauth_listen_host,
@@ -242,11 +462,13 @@ class GmailOAuthManager:
         )
 
     async def stop_web_server(self) -> None:
+        self._audit("local_server_stop_requested", was_started=self._runner is not None)
         if self._runner is not None:
             await self._runner.cleanup()
         self._runner = None
         self._site = None
         self._bot = None
+        self._audit("local_server_stopped")
 
     async def describe_archive(self, archive_path: Path) -> ArchiveIdentity:
         return await asyncio.to_thread(self._describe_archive_sync, Path(archive_path))
@@ -289,6 +511,7 @@ class GmailOAuthManager:
         telegram_filename: str | None = None,
     ) -> dict[str, Any]:
         archive_path = Path(archive_path)
+        self._audit("archive_send_requested", filename=archive_path.name, subject_prefix=subject_prefix)
         if not self.configured:
             raise GmailOAuthError("Gmail OAuth не настроен: введи Google Client ID/Secret через Telegram.")
         token = self.secret_store.load_gmail_oauth()
@@ -332,6 +555,14 @@ class GmailOAuthManager:
                     recipient,
                     existing.get("status"),
                 )
+                self._audit(
+                    "archive_duplicate_blocked",
+                    filename=locked_identity.name,
+                    size=locked_identity.size,
+                    sha256=locked_identity.sha256,
+                    recipient=recipient,
+                    status=existing.get("status"),
+                )
                 return {
                     "duplicate_skipped": True,
                     "status": existing.get("status"),
@@ -367,11 +598,25 @@ class GmailOAuthManager:
                 item = archives[ledger_key]
                 item.update({"status": "uncertain", "updated_at": time.time(), "error": str(exc)[:1000]})
                 self.secret_store.save_gmail_send_ledger(ledger)
+                self._audit(
+                    "archive_send_uncertain",
+                    level=logging.ERROR,
+                    filename=locked_identity.name,
+                    recipient=recipient,
+                    error=str(exc),
+                )
                 raise
             except Exception as exc:
                 # Explicit 4xx/configuration failures are safe to retry after fixing.
                 archives.pop(ledger_key, None)
                 self.secret_store.save_gmail_send_ledger(ledger)
+                self._audit(
+                    "archive_send_failed",
+                    level=logging.ERROR,
+                    filename=locked_identity.name,
+                    recipient=recipient,
+                    error=repr(exc),
+                )
                 raise
 
             item = archives[ledger_key]
@@ -393,6 +638,15 @@ class GmailOAuthManager:
                 sender,
                 recipient,
                 item.get("gmail_message_id"),
+            )
+            self._audit(
+                "archive_send_succeeded",
+                filename=locked_identity.name,
+                size=locked_identity.size,
+                sha256=locked_identity.sha256,
+                sender=sender,
+                recipient=recipient,
+                gmail_message_id=item.get("gmail_message_id"),
             )
             result = payload if isinstance(payload, dict) else {}
             result.update({"archive": asdict(locked_identity), "duplicate_skipped": False})
@@ -449,6 +703,7 @@ class GmailOAuthManager:
             ) from exc
 
     async def send_test(self) -> dict[str, Any]:
+        self._audit("test_email_requested", configured=self.configured, connected=self.connected)
         if not self.configured:
             raise GmailOAuthError("Google Client ID/Secret не сохранены.")
         token = self.secret_store.load_gmail_oauth()
@@ -474,18 +729,41 @@ class GmailOAuthManager:
                     json={"raw": raw},
                 ) as response:
                     payload = await self._response_json(response)
+                    self._audit(
+                        "test_email_api_response",
+                        http_status=response.status,
+                        payload_keys=sorted(payload.keys()) if isinstance(payload, dict) else [],
+                        sender=sender,
+                        recipient=recipient,
+                    )
                     if response.status >= 300:
                         raise GmailOAuthError(f"Gmail API test failed HTTP {response.status}: {payload}")
+                    self._audit(
+                        "test_email_succeeded",
+                        sender=sender,
+                        recipient=recipient,
+                        gmail_message_id=payload.get("id") if isinstance(payload, dict) else None,
+                    )
                     return payload if isinstance(payload, dict) else {}
-        except GmailOAuthError:
+        except GmailOAuthError as exc:
+            self._audit("test_email_failed", level=logging.ERROR, error=str(exc))
             raise
         except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            self._audit("test_email_network_failed", level=logging.ERROR, error=repr(exc))
             raise GmailOAuthError(f"Сетевая ошибка тестового письма: {exc}") from exc
 
     async def _healthz(self, request: web.Request) -> web.Response:
         self._purge_expired_states()
         probe = str(request.query.get("probe") or "")
         probe_confirmed = False
+        self._audit(
+            "health_request_received",
+            remote=request.remote,
+            host=request.host,
+            scheme=request.scheme,
+            probe_present=bool(probe),
+            probe_id=self._fingerprint(probe) if probe else "none",
+        )
         if probe:
             pending = self._health_probes.pop(probe, None)
             if pending and float(pending.get("expires_at", 0)) > time.time():
@@ -493,6 +771,20 @@ class GmailOAuthManager:
                 self._confirmed_probe_chats[chat_id] = time.time()
                 probe_confirmed = True
                 self.logger.info("Gmail external health probe confirmed chat_id=%s", chat_id)
+                self._audit(
+                    "health_probe_confirmed",
+                    chat_id=chat_id,
+                    probe_id=self._fingerprint(probe),
+                    remote=request.remote,
+                )
+            else:
+                self._audit(
+                    "health_probe_rejected",
+                    level=logging.WARNING,
+                    probe_id=self._fingerprint(probe),
+                    reason="missing_or_expired",
+                    remote=request.remote,
+                )
         return web.json_response(
             {
                 "ok": True,
@@ -506,8 +798,26 @@ class GmailOAuthManager:
         self._purge_expired_states()
         state = str(request.query.get("state") or "")
         error = str(request.query.get("error") or "")
+        code = str(request.query.get("code") or "")
         pending = self._pending_states.pop(state, None) if state else None
+        self._audit(
+            "oauth_callback_received",
+            remote=request.remote,
+            host=request.host,
+            scheme=request.scheme,
+            state_present=bool(state),
+            state_id=self._fingerprint(state) if state else "none",
+            state_match=bool(pending),
+            error=error or None,
+            code_present=bool(code),
+        )
         if not pending:
+            self._audit(
+                "oauth_callback_rejected",
+                level=logging.WARNING,
+                state_id=self._fingerprint(state) if state else "none",
+                reason="state_missing_expired_or_mismatch",
+            )
             return self._html_response(
                 "Ошибка авторизации",
                 "Ссылка устарела или state не совпал. Вернись в Telegram и нажми «Подключить Gmail» ещё раз.",
@@ -515,16 +825,26 @@ class GmailOAuthManager:
             )
         chat_id = int(pending["chat_id"])
         if error:
+            self._audit("oauth_callback_google_error", level=logging.WARNING, chat_id=chat_id, error=error)
             await self._notify(chat_id, f"❌ Gmail не подключён: Google вернул {error}.")
             return self._html_response("Авторизация отменена", f"Google вернул: {html.escape(error)}", status=400)
 
-        code = str(request.query.get("code") or "")
         if not code:
+            self._audit("oauth_callback_missing_code", level=logging.WARNING, chat_id=chat_id)
             await self._notify(chat_id, "❌ Gmail не подключён: callback пришёл без authorization code.")
             return self._html_response("Ошибка авторизации", "Google не вернул authorization code.", status=400)
 
         try:
+            self._audit("oauth_token_exchange_started", chat_id=chat_id, state_id=self._fingerprint(state))
             token_payload = await self._exchange_code(code)
+            self._audit(
+                "oauth_token_exchange_succeeded",
+                chat_id=chat_id,
+                response_keys=sorted(token_payload.keys()),
+                refresh_token_returned=bool(token_payload.get("refresh_token")),
+                access_token_returned=bool(token_payload.get("access_token")),
+                scope=str(token_payload.get("scope") or ""),
+            )
             old = self.secret_store.load_gmail_oauth() or {}
             refresh_token = token_payload.get("refresh_token") or old.get("refresh_token")
             if not refresh_token:
@@ -532,8 +852,15 @@ class GmailOAuthManager:
                     "Google не вернул refresh_token. Отключи доступ приложения в аккаунте Google и подключи заново."
                 )
             access_token = str(token_payload.get("access_token") or "")
+            self._audit("oauth_userinfo_started", chat_id=chat_id)
             user = await self._load_userinfo(access_token)
             email_value = str(user.get("email") or "").strip()
+            self._audit(
+                "oauth_userinfo_succeeded",
+                chat_id=chat_id,
+                email=email_value or None,
+                response_keys=sorted(user.keys()),
+            )
             if not email_value:
                 raise GmailOAuthError("Google не вернул email подключённого аккаунта.")
             granted_scope = str(token_payload.get("scope") or "")
@@ -549,6 +876,15 @@ class GmailOAuthManager:
                 "connected_at": time.time(),
             }
             self.secret_store.save_gmail_oauth(stored)
+            self._audit(
+                "oauth_token_saved",
+                chat_id=chat_id,
+                email=email_value,
+                refresh_token_present=bool(refresh_token),
+                access_token_present=bool(access_token),
+                expires_in_sec=int(token_payload.get("expires_in") or 3600),
+                scope=granted_scope,
+            )
             await self._notify(
                 chat_id,
                 f"✅ Gmail подключён: {email_value}\n"
@@ -560,6 +896,13 @@ class GmailOAuthManager:
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.exception("Gmail OAuth callback failed: %s", exc)
+            self._audit(
+                "oauth_callback_failed",
+                level=logging.ERROR,
+                chat_id=chat_id,
+                state_id=self._fingerprint(state),
+                error=repr(exc),
+            )
             await self._notify(chat_id, f"❌ Gmail OAuth ошибка: {exc}")
             return self._html_response("Ошибка Gmail OAuth", html.escape(str(exc)), status=500)
 
@@ -578,6 +921,13 @@ class GmailOAuthManager:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(GOOGLE_TOKEN_URL, data=data) as response:
                 payload = await self._response_json(response)
+                self._audit(
+                    "google_token_endpoint_response",
+                    http_status=response.status,
+                    response_keys=sorted(payload.keys()) if isinstance(payload, dict) else [],
+                    error=str(payload.get("error") or "") if isinstance(payload, dict) else "",
+                    error_description=str(payload.get("error_description") or "") if isinstance(payload, dict) else "",
+                )
                 if response.status >= 300:
                     raise GmailOAuthError(f"Token exchange failed HTTP {response.status}: {payload}")
                 if not isinstance(payload, dict):
@@ -592,6 +942,11 @@ class GmailOAuthManager:
                 headers={"Authorization": f"Bearer {access_token}"},
             ) as response:
                 payload = await self._response_json(response)
+                self._audit(
+                    "google_userinfo_endpoint_response",
+                    http_status=response.status,
+                    response_keys=sorted(payload.keys()) if isinstance(payload, dict) else [],
+                )
                 if response.status >= 300 or not isinstance(payload, dict):
                     raise GmailOAuthError(f"Google userinfo failed HTTP {response.status}: {payload}")
                 return payload
@@ -600,6 +955,7 @@ class GmailOAuthManager:
         access_token = str(token.get("access_token") or "")
         expires_at = float(token.get("expires_at") or 0)
         if access_token and expires_at > time.time() + 90:
+            self._audit("access_token_reused", expires_in_sec=int(expires_at - time.time()))
             return access_token
         refresh_token = str(token.get("refresh_token") or "")
         if not refresh_token:
@@ -614,9 +970,17 @@ class GmailOAuthManager:
             "refresh_token": refresh_token,
             "grant_type": "refresh_token",
         }
+        self._audit("access_token_refresh_started", client_source=self.client_source)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(GOOGLE_TOKEN_URL, data=data) as response:
                 payload = await self._response_json(response)
+                self._audit(
+                    "access_token_refresh_response",
+                    http_status=response.status,
+                    response_keys=sorted(payload.keys()) if isinstance(payload, dict) else [],
+                    error=str(payload.get("error") or "") if isinstance(payload, dict) else "",
+                    error_description=str(payload.get("error_description") or "") if isinstance(payload, dict) else "",
+                )
                 if response.status >= 300 or not isinstance(payload, dict):
                     raise GmailOAuthError(
                         f"Refresh token failed HTTP {response.status}: {payload}. Подключи Gmail заново."
@@ -626,6 +990,12 @@ class GmailOAuthManager:
         if payload.get("scope"):
             token["scope"] = payload["scope"]
         self.secret_store.save_gmail_oauth(token)
+        self._audit(
+            "access_token_refreshed",
+            access_token_present=bool(token.get("access_token")),
+            expires_in_sec=int(payload.get("expires_in") or 3600),
+            scope=str(token.get("scope") or ""),
+        )
         return token["access_token"]
 
     @staticmethod
@@ -678,11 +1048,26 @@ class GmailOAuthManager:
     async def _notify(self, chat_id: int, text: str) -> None:
         if self._bot is None:
             self.logger.warning("Could not notify Telegram chat=%s: bot is not attached", chat_id)
+            self._audit(
+                "telegram_notify_skipped",
+                level=logging.WARNING,
+                chat_id=chat_id,
+                reason="bot_not_attached",
+                text_preview=text[:160],
+            )
             return
         try:
             await self._bot.send_message(chat_id=chat_id, text=text)
+            self._audit("telegram_notify_succeeded", chat_id=chat_id, text_preview=text[:160])
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Could not notify Telegram about Gmail OAuth: %s", exc)
+            self._audit(
+                "telegram_notify_failed",
+                level=logging.WARNING,
+                chat_id=chat_id,
+                error=repr(exc),
+                text_preview=text[:160],
+            )
 
     def _purge_expired_states(self) -> None:
         now = time.time()
@@ -695,6 +1080,13 @@ class GmailOAuthManager:
         stale_chats = [chat_id for chat_id, confirmed_at in self._confirmed_probe_chats.items() if now - confirmed_at > 30 * 60]
         for chat_id in stale_chats:
             self._confirmed_probe_chats.pop(chat_id, None)
+        if expired or expired_probes or stale_chats:
+            self._audit(
+                "expired_oauth_state_purged",
+                oauth_states=len(expired),
+                health_probes=len(expired_probes),
+                confirmed_chats=len(stale_chats),
+            )
 
     @staticmethod
     async def _response_json(response: aiohttp.ClientResponse) -> Any:

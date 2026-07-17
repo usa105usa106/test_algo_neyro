@@ -1,4 +1,4 @@
-# ChatGPT Scan Bot 30d — 65_full
+# ChatGPT Scan Bot 30d — 64_full
 
 Telegram bot for manual / semi-automatic trading analysis with ChatGPT.
 
@@ -398,12 +398,19 @@ INTRADAY_DAYS_BACK=30
 - Parquet equivalence audit: 288 checkpoints across BTC/BCH/ETH/XAU/SILVER/USOIL produced zero decision/Entry/Stop/TP differences versus 57_full.
 - `/ping` must report `58_full`.
 
-## Gmail OAuth — версия 65
+## Gmail OAuth — версия 68
 
-- Callback-сервер слушает внутренний порт `80`; Coolify-маршрут закреплён за ним через `SERVICE_URL_GMAIL-AUTH_80`, а образ объявляет `EXPOSE 80`.
-- Бот сам показывает кнопку `/healthz` и не принимает Client ID/Secret, пока внешний запрос реально не достиг контейнера.
-- Gmail-настройки зеркалируются в фиксированную папку VPS и глобальный Docker volume и восстанавливаются из резервной копии при пустом основном хранилище.
-- ZIP отправляется в Gmail только после Telegram, с проверкой точного имени, размера, SHA-256 и защитой от дублей.
-- Письма ищутся в **Gmail → Отправленные**.
+- Runtime Telegram-бота возвращён к рабочей v64 и больше не содержит nginx или Gmail healthcheck.
+- Публичный HTTPS callback обслуживает отдельный `gmail-auth-gateway` на порту 80.
+- Бот слушает OAuth только внутри Compose-сети на `8080`, поэтому сбой почтового маршрута не блокирует `/start`, `/ping` и остальные режимы.
+- Coolify URL создаётся через `SERVICE_URL_GMAILAUTH_80`, а бот получает тот же домен через `SERVICE_FQDN_GMAILAUTH`.
+- Gmail-настройки сохраняются в прежнем bind-хранилище и резервном Docker volume.
+- ZIP отправляется в Gmail только после Telegram, с проверкой имени, размера, SHA-256 и защитой от дублей.
 
 Подробности: [`GMAIL_ONE_BUTTON_SETUP_RU.md`](GMAIL_ONE_BUTTON_SETUP_RU.md).
+
+### `/log_mail`
+
+Отдельный пошаговый отчёт подключения Gmail: Coolify gateway, `/healthz`, OAuth callback,
+token exchange, userinfo, сохранение подключения и тестовая отправка. Секреты, OAuth-коды
+и токены в файл не записываются. Команда полезна сразу после ошибки подключения.
