@@ -17,15 +17,15 @@ services:
       - MIN_EFFECTIVE_DAYS=${MIN_EFFECTIVE_DAYS:-20}
       - TZ=${TZ:-UTC}
 
-      # Explicit Coolify route to the callback listener's container port 80.
-      # The _80 suffix is internal routing metadata; users still receive a
-      # normal HTTPS URL without a visible custom port.
+      # Explicit Coolify route to the stable nginx router on container port 80.
+      # The router forwards only Gmail health/callback requests to the bot's
+      # internal listener on 8080; users still receive a normal HTTPS URL.
       - SERVICE_URL_GMAIL-AUTH_80
 
       - GMAIL_AUTO_SEND_ARCHIVES=true
       - GMAIL_MAX_ATTACHMENT_MB=24
       - GMAIL_OAUTH_LISTEN_HOST=0.0.0.0
-      - GMAIL_OAUTH_LISTEN_PORT=80
+      - GMAIL_OAUTH_LISTEN_PORT=8080
     expose:
       - "80"
     healthcheck:
@@ -33,7 +33,7 @@ services:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1/healthz', timeout=3).read()"
+        - "import urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({})).open('http://127.0.0.1/router-healthz', timeout=3).read()"
       interval: 10s
       timeout: 5s
       retries: 12

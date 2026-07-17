@@ -13,6 +13,7 @@ RUN apt-get update \
         ca-certificates \
         tzdata \
         fontconfig \
+        nginx \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt
@@ -25,7 +26,7 @@ RUN chmod +x /app/docker-entrypoint.sh \
 
 VOLUME ["/app/storage"]
 
-# Make the Gmail callback listener discoverable by Coolify/Traefik.
+# Expose the stable Gmail router to Coolify/Traefik.
 EXPOSE 80
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
