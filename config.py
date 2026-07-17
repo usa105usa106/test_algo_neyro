@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-APP_VERSION = "70_full_GMAIL_DIRECT_PORT80_ROUTE_FIX"
+APP_VERSION = "72_full_GMAIL_EMAIL_ZIP_JPG_ATTACHMENT"
 
 
 def _normalize_public_base_url(value: str) -> str:
